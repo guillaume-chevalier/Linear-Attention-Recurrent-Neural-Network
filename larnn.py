@@ -3,6 +3,7 @@
 
 import torch
 from torch import nn
+from hyperopt import hp
 
 
 __author__ = "Guillaume Chevalier"
@@ -31,7 +32,7 @@ class LARNNModel(nn.Module):
         # Use batch normalisation at more places?
         'use_BN': True,
         # Number of layers, either stacked or residualy stacked:
-        'nb_layers': hp.choice('nb_layers', [2, 3]),,
+        'nb_layers': hp.choice('nb_layers', [2, 3]),
         # Use residual connections for the 2nd (stacked) layer?
         'is_stacked_residual': hp.choice('is_stacked_residual', [False, True]),
         # How the new attention is placed in the LSTM
@@ -56,7 +57,7 @@ class LARNNModel(nn.Module):
 
 class LARNN(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers,
-                 is_stacked_residual=False, mode='residual', dropout=0.0):
+                 is_stacked_residual=False, larnn_mode='residual', dropout=0.0):
         """A LARNN Cell on which it's possible to loop as an LSTM Cell.
 
         Args:
@@ -66,8 +67,8 @@ class LARNN(nn.Module):
             is_stacked_residual: wheter or not the stacked LARNN layers are
                 added to the value of the first LARNN layer (and using a final
                 batch norm).
-            mode='concat|residual|layer': how the attention is plugged into the
-                inner LSTM's layers. Specifically:
+            larnn_mode='concat|residual|layer': how the attention is plugged
+                into the inner LSTM's layers. Specifically:
                   - 'concat' will concatenate the result of the attention to
                     the `(W*x+W*h+b)` values as `concat(W*x+W*h+b, a)`
                     before the gating and will hence make the inner cell bigger.
@@ -88,14 +89,14 @@ class LARNN(nn.Module):
 class LARNNCell(nn.Module):
 
     def __init__(self, input_size, hidden_size,
-                 mode='residual'):
+                 larnn_mode='residual'):
         """A LARNN Cell on which it's possible to loop as an LSTM Cell.
 
         Args:
             input_size: number of features in the input `x`
             hidden_size: number of features in the inner LSTM's state
-            mode='concat|residual|layer': how the attention is plugged into the
-                inner LSTM's layers. Specifically:
+            larnn_mode='concat|residual|layer': how the attention is plugged
+                into the inner LSTM's layers. Specifically:
                   - 'concat' will concatenate the result of the attention to
                     the `(W*x+W*h+b)` values as `concat(W*x+W*h+b, a)`
                     before the gating and will hence make the inner cell bigger.
@@ -138,7 +139,7 @@ if __name__ == '__main__':
                     'use_BN': True,
                     'nb_layers': 2,
                     'is_stacked_residual': is_stacked_residual,
-                    'larnn_mode': larnn_mode
+                    'larnn_mode': larnn_mode,
                     'use_positional_encoding': use_positional_encoding,
                     # dataset-dependant values:
                     'time_steps': 5,

@@ -4,14 +4,16 @@
 #     (Apache 2.0 License, Copyright 2017, Guillaume Chevalier and Yu Zhao)
 # Which in turns had some derived code from there, regarding loading the Opportunity dataset:
 #     https://github.com/sussexwearlab/DeepConvLSTM/blob/master/DeepConvLSTM.ipynb
+# There is also some code derived from:
+#     https://github.com/guillaume-chevalier/LSTM-Human-Activity-Recognition
+#     (MIT License, Copyright 2017, Guillaume Chevalier)
 
 
-from training_loop import one_hot, run_with_config
-from sliding_window import sliding_window
+from data.sliding_window import sliding_window
 
 import numpy as np
 
-import cPickle as cp
+import pickle
 import time
 import os
 
@@ -28,8 +30,9 @@ class Dataset:
         self.load_train_test()
 
         if verbose:
+            print("Shapes for [self.X_train, self.Y_train, self.X_test, self.Y_test]:")
             for ds in [self.X_train, self.Y_train, self.X_test, self.Y_test]:
-                print ds.shape
+                print(ds.shape)
 
 
 class UCIHARDataset(Dataset):
@@ -187,7 +190,7 @@ class OpportunityDataset(Dataset):
     def load_dataset(self, filename):
 
         f = file(filename, 'rb')
-        data = cp.load(f)
+        data = pickle.load(f)
         f.close()
 
         X_train, Y_train = data[0]

@@ -2,7 +2,7 @@
 """Train a model with Hyperopt, or retrain the best model in the main here."""
 
 from json_utils import print_json
-from larnn import LARNN
+from larnn import LARNNModel
 
 from hyperopt import STATUS_OK, STATUS_FAIL
 
@@ -40,14 +40,12 @@ __notice__ = """
 def build_and_train(hyperparameters, dataset):
     """Build the deep CNN model and train it."""
 
-    print("Hyperspace:")
+    print("LARNN with hyperparameters:")
     print(hyperparameters)
-
-    K.set_learning_phase(1)
-    K.set_image_data_format('channels_last')
-    model = LARNN(hyperparameters)
+    model = LARNNModel(hyperparameters)
 
     # Train net:
+    # K.set_learning_phase(1)
     history = model.fit(
         [dataset.x_train],
         [dataset.y_train],
@@ -59,7 +57,7 @@ def build_and_train(hyperparameters, dataset):
     ).history
 
     # Test net:
-    K.set_learning_phase(0)
+    # K.set_learning_phase(0)
     score = model.evaluate([x_test], [y_test, y_test_coarse], verbose=0)
     max_acc = max(history['val_fine_outputs_acc'])
 

@@ -15,7 +15,7 @@ import os
 import zipfile
 import argparse
 import numpy as np
-import cPickle as cp
+import pickle
 
 from io import BytesIO
 from pandas import Series
@@ -323,7 +323,7 @@ def generate_data(dataset, target_filename, label):
 
     obj = [(X_train, y_train), (X_test, y_test)]
     f = file(os.path.join(data_dir, target_filename), 'wb')
-    cp.dump(obj, f, protocol=cp.HIGHEST_PROTOCOL)
+    pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
     f.close()
 
 

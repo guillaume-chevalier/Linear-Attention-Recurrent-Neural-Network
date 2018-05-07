@@ -1,13 +1,12 @@
 
 """Auto-optimizing a neural network with Hyperopt (TPE algorithm)."""
 
-
-from neural_net import build_and_train, build_model
+from larnn import LARNNModel
+from train import build_and_train
 from json_utils import print_json, save_json_result
+from datasets_configurations import dataset_name_to_class
 
-from keras.utils import plot_model
-import keras.backend as K
-from hyperopt import hp, tpe, fmin, Trials
+from hyperopt import tpe, fmin, Trials, STATUS_FAIL
 
 import pickle
 import os
@@ -42,6 +41,8 @@ __notice__ = """
 def optimize_nn(hyperparameters):
     """Build a convolutional neural network and train it."""
     try:
+
+        dataset = dataset_name_to_class['UCI HAR']
         model, model_name, result = build_and_train(hyperparameters, dataset)
 
         # Save training results to disks with unique filenames
@@ -89,7 +90,7 @@ def run_a_trial():
 
     best = fmin(
         optimize_nn,
-        space,
+        LARNNModel.HYPERPARAMETERS_SPACE,
         algo=tpe.suggest,
         trials=trials,
         max_evals=max_evals
@@ -108,9 +109,10 @@ if __name__ == "__main__":
 
     print("Results will be saved in the folder named `results/`. "
           "You can sort that alphabetically and take the greatest one. "
-          "As you run the optimization, results are consinuously saved into a "
-          "`results.pkl` file, too. Re-running optimize.py will resume "
-          "the meta-optimization to spawn new models in the given space.\n")
+          "As you run the optimization, results are consinuously saved into "
+          "a `results.pkl` file, too. Re-running optimize.py will resume "
+          "the meta-optimization to spawn new models in the given "
+          "hyperparameters space.\n")
 
     while True:
         print("OPTIMIZING NEW MODEL:")
