@@ -8,14 +8,13 @@
 #     https://github.com/guillaume-chevalier/LSTM-Human-Activity-Recognition
 #     (MIT License, Copyright 2017, Guillaume Chevalier)
 
-
-from data.sliding_window import sliding_window
+import os
+import pickle
+import time
 
 import numpy as np
 
-import pickle
-import time
-import os
+from data.sliding_window import sliding_window
 
 
 class Dataset:
@@ -36,6 +35,7 @@ class Dataset:
 
 
 class UCIHARDataset(Dataset):
+    NAME = "UCIHAR"
 
     LABELS = [
         "WALKING",
@@ -137,6 +137,7 @@ class UCIHARDataset(Dataset):
 
 
 class OpportunityDataset(Dataset):
+    NAME = "Opportunity"
 
     def __init__(self, verbose=False):
         super().__init__(verbose)
@@ -207,9 +208,3 @@ class OpportunityDataset(Dataset):
         Y_test = Y_test.astype(np.uint8)
 
         return X_train, Y_train, X_test, Y_test
-
-
-dataset_name_to_class = {
-    'UCI HAR': UCIHARDataset,
-    'Opportunity': OpportunityDataset
-}

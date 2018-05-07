@@ -1,16 +1,14 @@
 
 """Auto-optimizing a neural network with Hyperopt (TPE algorithm)."""
 
-from larnn import LARNNModel
-from train import build_and_train
-from json_utils import print_json, save_json_result
-from datasets_configurations import dataset_name_to_class
-
-from hyperopt import tpe, fmin, Trials, STATUS_FAIL
-
-import pickle
+import argparse
 import os
+import pickle
 import traceback
+
+from hyperopt import tpe, fmin, Trials
+
+from train import optimize_model, Model
 
 
 __author__ = "Guillaume Chevalier"
@@ -38,37 +36,12 @@ __notice__ = """
 """
 
 
-def optimize_nn(hyperparameters):
-    """Build a convolutional neural network and train it."""
-    try:
-
-        dataset = dataset_name_to_class['UCI HAR']
-        model, model_name, result = build_and_train(hyperparameters, dataset)
-
-        # Save training results to disks with unique filenames
-        save_json_result(model_name, result)
-
-        K.clear_session()
-        del model
-
-        return result
-
-    except Exception as err:
-        try:
-            K.clear_session()
-        except:
-            pass
-        err_str = str(err)
-        print(err_str)
-        traceback_str = str(traceback.format_exc())
-        print(traceback_str)
-        return {
-            'status': STATUS_FAIL,
-            'err': err_str,
-            'traceback': traceback_str
-        }
-
-    print("\n\n")
+parser = argparse.ArgumentParser(
+    description='Hyperopt meta-optimizer for the LARNN Model on sensors datasets.')
+parser.add_argument(
+    '--dataset', type=str, default='UCIHAR',
+    help='Which dataset to use ("UCIHAR" or "Opportunity")')
+args = parser.parse_args()
 
 
 def run_a_trial():
@@ -89,8 +62,8 @@ def run_a_trial():
         print("Starting from scratch: new trials.")
 
     best = fmin(
-        optimize_nn,
-        LARNNModel.HYPERPARAMETERS_SPACE,
+        optimize_model(args.dataset),
+        Model.HYPERPARAMETERS_SPACE,
         algo=tpe.suggest,
         trials=trials,
         max_evals=max_evals

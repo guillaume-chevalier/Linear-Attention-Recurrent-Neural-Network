@@ -1,7 +1,6 @@
 
 """Json utils to print, save and load training results."""
 
-
 from bson import json_util
 import json
 import os
@@ -19,6 +18,7 @@ __notice__ = """
         https://github.com/Vooban/Hyperopt-Keras-CNN-CIFAR-100/commit/66c6492afa524139ba8153a8c7495cd177b08bf2#diff-04d2c9518498da64bfa9db44c6211645
 """
 
+
 RESULTS_DIR = "results/"
 
 
@@ -31,12 +31,14 @@ def print_json(result):
     ))
 
 
-def save_json_result(model_name, result):
+def save_json_result(model_name, result, dataset_name):
     """Save json to a directory and a filename."""
     result_name = '{}.txt.json'.format(model_name)
-    if not os.path.exists(RESULTS_DIR):
-        os.makedirs(RESULTS_DIR)
-    with open(os.path.join(RESULTS_DIR, result_name), 'w') as f:
+    results_dir = os.path.join(RESULTS_DIR, dataset_name)
+    for dir in [RESULTS_DIR, results_dir]:
+        if not os.path.exists(dir):
+            os.makedirs(dir)
+    with open(os.path.join(results_dir, result_name), 'w') as f:
         json.dump(
             result, f,
             default=json_util.default, sort_keys=True,
@@ -44,9 +46,9 @@ def save_json_result(model_name, result):
         )
 
 
-def load_json_result(best_result_name):
+def load_json_result(best_result_name, dataset_name):
     """Load json from a path (directory + filename)."""
-    result_path = os.path.join(RESULTS_DIR, best_result_name)
+    result_path = os.path.join(RESULTS_DIR, dataset_name, best_result_name)
     with open(result_path, 'r') as f:
         return json.JSONDecoder().decode(
             f.read()
@@ -55,9 +57,10 @@ def load_json_result(best_result_name):
         )
 
 
-def load_best_hyperspace():
+def load_best_hyperspace(dataset_name):
+    results_dir = os.path.join(RESULTS_DIR, dataset_name)
     results = [
-        f for f in list(sorted(os.listdir(RESULTS_DIR))) if 'json' in f
+        f for f in list(sorted(os.listdir(results_dir))) if 'json' in f
     ]
     if len(results) == 0:
         return None

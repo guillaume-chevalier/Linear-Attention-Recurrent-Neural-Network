@@ -9,8 +9,6 @@
 __author__ = 'fjordonez, gchevalier'
 
 
-from signal_filtering import filter_opportunity_datasets_accelerometers
-
 import os
 import zipfile
 import argparse
@@ -19,6 +17,8 @@ import pickle
 
 from io import BytesIO
 from pandas import Series
+
+from signal_filtering import filter_opportunity_datasets_accelerometers
 
 
 # Hardcoded number of sensor channels employed in the OPPORTUNITY challenge
@@ -196,7 +196,7 @@ def check_data(data_set):
             Path with original OPPORTUNITY zip file
     :return:
     """
-    print 'Checking dataset {0}'.format(data_set)
+    print('Checking dataset {0}'.format(data_set))
     data_dir, data_file = os.path.split(data_set)
     # When a directory is not provided, check if dataset is in the data directory
     if data_dir == "" and not os.path.isfile(data_set):
@@ -206,15 +206,15 @@ def check_data(data_set):
 
     # When dataset not found, try to download it from UCI repository
     if (not os.path.isfile(data_set)) and data_file == 'OpportunityUCIDataset.zip':
-        print '... dataset path {0} not found'.format(data_set)
+        print('... dataset path {0} not found'.format(data_set))
         import urllib
         origin = (
             'https://archive.ics.uci.edu/ml/machine-learning-databases/00226/OpportunityUCIDataset.zip'
         )
         if not os.path.exists(data_dir):
-            print '... creating directory {0}'.format(data_dir)
+            print('... creating directory {0}'.format(data_dir))
             os.makedirs(data_dir)
-        print '... downloading data from {0}'.format(origin)
+        print('... downloading data from {0}'.format(origin))
         urllib.urlretrieve(origin, data_set)
 
     return data_dir
@@ -254,14 +254,14 @@ def process_dataset_file(data, label, filter_accelerometers):
         _, x_gyros, x_accms = split_data_into_time_gyros_accelerometers(
             data_x, is_accelerometer
         )
-        print "gyros' shape: {}".format(x_gyros.shape)
-        print "old accelerometers' shape: {}".format(x_accms.shape)
+        print("gyros' shape: {}".format(x_gyros.shape))
+        print("old accelerometers' shape: {}".format(x_accms.shape))
         x_accms = normalize(filter_opportunity_datasets_accelerometers(x_accms))
-        print "new accelerometers' shape: {}".format(x_accms.shape)
+        print("new accelerometers' shape: {}".format(x_accms.shape))
         # Put features together (inner concatenation with transposals)
 
         data_x = np.hstack([x_gyros, x_accms])
-        print "new total shape: {}".format(data_x.shape)
+        print("new total shape: {}".format(data_x.shape))
 
     return data_x, data_y
 
@@ -287,14 +287,14 @@ def load_data_files(zipped_dataset, label, data_files, filter_accelerometers=Fal
     for filename in data_files:
         try:
             data = np.loadtxt(BytesIO(zipped_dataset.read(filename)))
-            print '... file {0}'.format(filename)
+            print('... file {0}'.format(filename))
             x, y = process_dataset_file(data, label, filter_accelerometers)
             data_x = np.vstack((data_x, x))
             data_y = np.concatenate([data_y, y])
-            print "Data's shape yet: "
-            print data_x.shape
+            print("Data's shape yet: ")
+            print(data_x.shape)
         except KeyError:
-            print 'ERROR: Did not find {0} in zip file'.format(filename)
+            print('ERROR: Did not find {0} in zip file'.format(filename))
 
     return data_x, data_y
 
@@ -314,12 +314,12 @@ def generate_data(dataset, target_filename, label):
     data_dir = check_data(dataset)
     zf = zipfile.ZipFile(dataset)
 
-    print '\nProcessing train dataset files...\n'
+    print('\nProcessing train dataset files...\n')
     X_train, y_train = load_data_files(zf, label, OPPORTUNITY_DATA_FILES_TRAIN)
-    print '\nProcessing test dataset files...\n'
+    print('\nProcessing test dataset files...\n')
     X_test,  y_test  = load_data_files(zf, label, OPPORTUNITY_DATA_FILES_TEST)
 
-    print "Final datasets with size: | train {0} | test {1} | ".format(X_train.shape, X_test.shape)
+    print("Final datasets with size: | train {0} | test {1} | ".format(X_train.shape, X_test.shape))
 
     obj = [(X_train, y_train), (X_test, y_test)]
     f = file(os.path.join(data_dir, target_filename), 'wb')
