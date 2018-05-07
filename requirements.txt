@@ -1,0 +1,6 @@
+# python3
+networkx==1.11
+torch==0.4.0
+hyperopt==0.1
+pandas
+scipy
