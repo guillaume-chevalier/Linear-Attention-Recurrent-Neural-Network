@@ -31,7 +31,7 @@ def print_json(result):
     ))
 
 
-def save_json_result(model_name, result, dataset_name):
+def save_json_result(model_name, dataset_name, result):
     """Save json to a directory and a filename."""
     result_name = '{}.txt.json'.format(model_name)
     results_dir = os.path.join(RESULTS_DIR, dataset_name)

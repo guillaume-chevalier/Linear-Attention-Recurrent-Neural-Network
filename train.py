@@ -40,21 +40,11 @@ __notice__ = """
 """
 
 
-def optimize_model(dataset_name):
-    _dataset = dataset_name_to_class[dataset_name]()
-    _training_func = dataset_name_to_training_function[dataset_name]
-
-    # Returns a callable for Hyperopt Optimization (for `fmin`):
-    return lambda hyperparameters: (
-        optimize_model(hyperparameters, _dataset, _training_func)
-    )
-
 def optimize_model(hyperparameters, dataset, training_function):
-    """Build a convolutional neural network and train it."""
-    try:
+    """Build a LARNN and train it on given dataset."""
 
-        dataset = dataset_name_to_class['UCI HAR']
-        model, model_name, result = build_and_train(hyperparameters, dataset)
+    try:
+        model, model_name, result = training_function(hyperparameters, dataset)
 
         # Save training results to disks with unique filenames
         save_json_result(model_name, dataset.NAME, result)
@@ -66,9 +56,10 @@ def optimize_model(hyperparameters, dataset, training_function):
 
     except Exception as err:
         try:
-            K.clear_session()
+            del model
         except:
             pass
+
         err_str = str(err)
         print(err_str)
         traceback_str = str(traceback.format_exc())
@@ -81,12 +72,17 @@ def optimize_model(hyperparameters, dataset, training_function):
 
     print("\n\n")
 
-def build_and_train_for_uci_har(hyperparameters, dataset):
+
+def train_for_uci_har(hyperparameters, dataset):
     """Build the deep CNN model and train it."""
 
+    # Filling missing values of hyperparameters for what regards the dataset:
+    hyperparameters['time_steps'] = 128
+    hyperparameters['input_size'] = 9
+
     print("LARNN with hyperparameters:")
-    print(hyperparameters)
-    model = LARNNModel(hyperparameters)
+    print_json(hyperparameters)
+    model = Model(hyperparameters)
 
     # Train net:
     # K.set_learning_phase(1)
@@ -132,8 +128,26 @@ def build_and_train_for_uci_har(hyperparameters, dataset):
     return model, model_name, result
 
 
-def build_and_train_for_opportunity(hyperparameters, dataset):
-    pass
+def train_for_opportunity(hyperparameters, dataset):
+    return train_for_uci_har(hyperparameters, dataset)
+
+dataset_name_to_class = {
+    'UCIHAR': UCIHARDataset,
+    'Opportunity': OpportunityDataset
+}
+dataset_name_to_training_function = {
+    'UCIHAR': train_for_uci_har,
+    'Opportunity': train_for_opportunity
+}
+
+def get_optimizer(dataset_name):
+    _dataset = dataset_name_to_class[dataset_name]()
+    _training_func = dataset_name_to_training_function[dataset_name]
+
+    # Returns a callable for Hyperopt Optimization (for `fmin`):
+    return lambda hyperparameters: (
+        optimize_model(hyperparameters, _dataset, _training_func)
+    )
 
 
 class Model(nn.Module):
@@ -188,16 +202,6 @@ class Model(nn.Module):
 
     def forward(self, input, state=None):
         return self.larnn(input, state)
-
-
-dataset_name_to_class = {
-    'UCIHAR': UCIHARDataset,
-    'Opportunity': OpportunityDataset
-}
-dataset_name_to_training_function = {
-    'UCIHAR': build_and_train_for_uci_har,
-    'Opportunity': build_and_train_for_opportunity
-}
 
 
 if __name__ == "__main__":

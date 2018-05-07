@@ -322,9 +322,8 @@ def generate_data(dataset, target_filename, label):
     print("Final datasets with size: | train {0} | test {1} | ".format(X_train.shape, X_test.shape))
 
     obj = [(X_train, y_train), (X_test, y_test)]
-    f = file(os.path.join(data_dir, target_filename), 'wb')
-    pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
-    f.close()
+    with open(os.path.join(data_dir, target_filename), 'wb') as f:
+        pickle.dump(obj, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 def get_args():

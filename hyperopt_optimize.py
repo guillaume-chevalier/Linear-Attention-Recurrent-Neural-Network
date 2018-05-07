@@ -8,7 +8,7 @@ import traceback
 
 from hyperopt import tpe, fmin, Trials
 
-from train import optimize_model, Model
+from train import get_optimizer, Model
 
 
 __author__ = "Guillaume Chevalier"
@@ -62,7 +62,7 @@ def run_a_trial():
         print("Starting from scratch: new trials.")
 
     best = fmin(
-        optimize_model(args.dataset),
+        get_optimizer(args.dataset),
         Model.HYPERPARAMETERS_SPACE,
         algo=tpe.suggest,
         trials=trials,
