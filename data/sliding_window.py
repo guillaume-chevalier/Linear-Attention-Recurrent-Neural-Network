@@ -1,8 +1,16 @@
-# From: https://github.com/sussexwearlab/DeepConvLSTM
-# Which is from http://www.johnvinyard.com/blog/?p=268
+
+# Note: this file is taken from:
+#     https://github.com/guillaume-chevalier/HAR-stacked-residual-bidir-LSTMs
+#     (Apache 2.0 License, Copyright 2017, Guillaume Chevalier and Yu Zhao)
+# Which is in turns derived from:
+#     https://github.com/sussexwearlab/DeepConvLSTM
+# Which is in turns from:
+#     http://www.johnvinyard.com/blog/?p=268
+
 
 import numpy as np
 from numpy.lib.stride_tricks import as_strided as ast
+
 
 def norm_shape(shape):
     '''

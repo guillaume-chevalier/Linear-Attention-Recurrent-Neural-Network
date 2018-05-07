@@ -1,9 +1,19 @@
-# Explanations here about what this file does:
-# https://github.com/guillaume-chevalier/python-signal-filtering-stft
 
-# However our signal here is sampled and processed differently.
-# See function filter_opportunity_datasets_accelerometers below.
-__author__ = 'gchevalier'
+# Note: this file is taken from:
+#     https://github.com/guillaume-chevalier/HAR-stacked-residual-bidir-LSTMs
+#     (Apache 2.0 License, Copyright 2017, Guillaume Chevalier and Yu Zhao)
+# Which is in turns derived from there:
+#     https://github.com/guillaume-chevalier/python-signal-filtering-stft
+#     (MIT License, Copyright 2017, Guillaume Chevalier)
+
+# Note: see explanations here about what this code does:
+#     https://github.com/guillaume-chevalier/python-signal-filtering-stft
+# Our signal is sampled and processed slightly differently here. Hence,
+# see the function `filter_opportunity_datasets_accelerometers` below.
+
+
+__author__ = 'Guillaume Chevalier'
+
 
 import numpy as np
 from scipy import signal

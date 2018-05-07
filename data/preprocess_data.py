@@ -1,5 +1,13 @@
-# Adapted from: https://github.com/sussexwearlab/DeepConvLSTM
+
+# Note: this file is taken from:
+#     https://github.com/guillaume-chevalier/HAR-stacked-residual-bidir-LSTMs
+#     (Apache 2.0 License, Copyright 2017, Guillaume Chevalier and Yu Zhao)
+# Which is in turns derived from:
+#     https://github.com/sussexwearlab/DeepConvLSTM
+
+
 __author__ = 'fjordonez, gchevalier'
+
 
 from signal_filtering import filter_opportunity_datasets_accelerometers
 
@@ -11,6 +19,7 @@ import cPickle as cp
 
 from io import BytesIO
 from pandas import Series
+
 
 # Hardcoded number of sensor channels employed in the OPPORTUNITY challenge
 NB_SENSOR_CHANNELS = 113
