@@ -1,12 +1,14 @@
 
-"""Convolutional neural network built with Keras."""
+"""Train a model with Hyperopt, or retrain the best model in the main here."""
 
 from json_utils import print_json
+from larnn import LARNN
 
 from hyperopt import STATUS_OK, STATUS_FAIL
 
 import uuid
 import traceback
+import sys
 import os
 
 
@@ -38,9 +40,12 @@ __notice__ = """
 def build_and_train(hyperparameters, dataset):
     """Build the deep CNN model and train it."""
 
+    print("Hyperspace:")
+    print(hyperparameters)
+
     K.set_learning_phase(1)
     K.set_image_data_format('channels_last')
-    model = build_model(hyperparameters)
+    model = LARNN(hyperparameters)
 
     # Train net:
     history = model.fit(
@@ -85,9 +90,19 @@ def build_and_train(hyperparameters, dataset):
     return model, model_name, result
 
 
-def build_model(hype_space):
-    """Create model according to the hyperparameter space given."""
-    print("Hyperspace:")
-    print(hype_space)
+if __name__ == "__main__":
+    """Take the best hyperparameters and train on them."""
 
-    raise NotImplementedError("build_model() not implemented")
+    space_best_model = load_best_hyperspace()
+
+    if space_best_model is None:
+        print("You haven't found good hyperparameters yet. Run `hyperopt_optimize.py` first.")
+        sys.exit(1)
+
+    # Train the model.
+    model, model_name, result = build_and_train(hyperparameters, dataset)
+
+    # Save training results to disks with unique filenames
+    print("Model Name:", model_name)
+    print("Training results:")
+    print_json(result)
