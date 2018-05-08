@@ -28,14 +28,17 @@ class Dataset:
         if verbose:
             print("Loading {} dataset...".format(Dataset.NAME))
 
-        self.X_train = None
-        self.X_test = None
-        self.Y_train = None
-        self.Y_test = None
+        self.X_train = None  # [batch_size, sequence_length, features]
+        self.X_test = None  # [batch_size], or if one_hot: [batch_size, output_classes_size]
+        self.Y_train = None  # (batch_size, sequence_length, features)
+        self.Y_test = None  # [batch_size], or if one_hot: [batch_size, output_classes_size]
         self.load_train_test()
         if one_hot:
-            self.Y_train = self.one_hot(self.Y_train, n_classes=self.OUTPUT_CLASSES_SIZE)
-            self.Y_test = self.one_hot(self.Y_test, n_classes=self.OUTPUT_CLASSES_SIZE)
+            self.Y_train = self.one_hot(self.Y_train)
+            self.Y_test = self.one_hot(self.Y_test)
+        else:
+            self.Y_train = np.squeeze(self.Y_train)
+            self.Y_test = np.squeeze(self.Y_test)
 
         if verbose:
             print("Shapes for [self.X_train, self.Y_train, self.X_test, self.Y_test]:")
@@ -47,7 +50,7 @@ class Dataset:
                     ", std={}".format(np.std(ds)))
             print("Dataset loaded.\n")
 
-    def one_hot(self, Y_, n_classes):
+    def one_hot(self, Y_):
         """Function to encode output labels from number indexes.
 
         e.g.: [[5], [0], [3]] --> [[0, 0, 0, 0, 0, 1], [1, 0, 0, 0, 0, 0], [0, 0, 0, 1, 0, 0]]
@@ -55,7 +58,7 @@ class Dataset:
             return:     Y_, a 2D np.ndarray containing one-hot features
         """
         Y_ = Y_.reshape(len(Y_))
-        return np.eye(n_classes)[np.array(Y_, dtype=np.int32)]  # Returns FLOATS
+        return np.eye(self.OUTPUT_CLASSES_SIZE)[np.array(Y_, dtype=np.int32)]  # Returns FLOATS
 
 
 class UCIHARDataset(Dataset):

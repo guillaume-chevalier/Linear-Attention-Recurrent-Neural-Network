@@ -37,6 +37,7 @@ class LARNN(nn.Module):
                 at each attention step
             dropout: how much dropout is applied on the output
         """
+        super().__init__()
         raise NotImplementedError()
 
     def forward(self, input, state=None):
@@ -67,6 +68,7 @@ class LARNNCell(nn.Module):
                 of sines and cosines for positional encoding, re-generated
                 at each attention step
         """
+        super().__init__()
         raise NotImplementedError()
 
     def forward(self, input, state):
