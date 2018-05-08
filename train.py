@@ -80,7 +80,12 @@ def optimize_model(hyperparameters, dataset, evaluation_metric):
 def train(hyperparameters, dataset, evaluation_metric):
     """Build the deep CNN model and train it."""
 
-    hyperparameters['hidden_size'] = int(hyperparameters['hidden_size']) # Sanitizing params
+    # Sanitizing integer parameters that shouldn't be float:
+    hyperparameters['larnn_window_size'] = int(hyperparameters['larnn_window_size'])
+
+    # hidden_size must be divisible by attention_heads
+    hyperparameters['hidden_size'] = int(round(hyperparameters['hidden_size'] / hyperparameters['attention_heads'])) * hyperparameters['attention_heads']
+
     print("LARNN with hyperparameters:")
     print_json(hyperparameters)
 
@@ -174,9 +179,7 @@ def train(hyperparameters, dataset, evaluation_metric):
     full_metric_name = 'validation_{}'.format(evaluation_metric)
     max_score = max(history[full_metric_name])
     model_name = "model_{}_{}".format(str(max_score), str(uuid.uuid4())[:5])
-    print("Model name: {}".format(model_name))
-    print("HISTORY:")
-    print_json(history)
+    print("Model name: {}.txt.json".format(model_name))
     result = {
         # Note: 'loss' in Hyperopt means 'score', so we use something else it's not the real loss.
         'loss': -max_score,
@@ -219,6 +222,7 @@ def get_optimizer(dataset_name):
 
 class Model(nn.Module):
     HYPERPARAMETERS_SPACE = {
+        ### Optimization parameters
         # This loguniform scale will multiply the learning rate, so as to make
         # it vary exponentially, in a multiplicative fashion rather than in
         # a linear fashion, to handle his exponentialy varying nature:
@@ -230,24 +234,35 @@ class Model(nn.Module):
         # Number of examples fed per training step
         'batch_size': 64,
 
+        ### LSTM/RNN parameters
         # The dropout on the hidden unit on top of each LARNN cells
         'dropout_drop_proba': hp.uniform('dropout_drop_proba', 0.1, 0.5),
         # Let's multiply the "default" number of hidden units:
         'hidden_size': 42 * hp.loguniform('hidden_size_mult', -0.6, 0.6),
+        # The number 'h' of attention heads:
+        'attention_heads': 8,
         # Use batch normalisation at more places?
         'use_BN': True,
+
+        ### LARNN (Linear Attention RNN) parameters
+        # How restricted is the attention back in time steps (across sequence)
+        'larnn_window_size': hp.uniform('larnn_window_size', 1, 50),
+        # How the new attention is placed in the LSTM
+        'larnn_mode': hp.choice('larnn_mode', [
+            'residual',  # Attention will be added to Wx and Wh as `Wx*x + Wh*h + Wa*a + b`.
+            'layer'  # Attention will be post-processed like `Wa*(concat(x, h, a)) + bs`
+            # Note:
+            #     `a(K, Q, V) = MultiHeadSoftmax(Q*K'/sqrt(dk))*V` like in Attention Is All You Need (AIAYN).
+            #     `Q = Wxh*concat(x, h) + bxh`
+            #     `V = K = Wk*(a "larnn_window_size" number of most recent cells)`
+        ]),
+        # Wheter or not to use Positional Encoding similar to the one used in https://arxiv.org/abs/1706.03762
+        'use_positional_encoding': hp.choice('use_positional_encoding', [False, True]),
+
         # Number of layers, either stacked or residualy stacked:
         'num_layers': hp.choice('num_layers', [2, 3]),
         # Use residual connections for the 2nd (stacked) layer?
-        'is_stacked_residual': hp.choice('is_stacked_residual', [False, True]),
-        # How the new attention is placed in the LSTM
-        'larnn_mode': hp.choice('attention_type', [
-            'concat',  # Attention will be concatenated to x and h.
-            'residual',  # Attention will be added to x and h.
-            'layer'  # Attention will be computed from a layer with x and h.
-        ]),
-        # Wheter or not to use Positional Encoding similar to the one used in https://arxiv.org/abs/1706.03762
-        'use_positional_encoding': hp.choice('use_positional_encoding', [False, True])
+        'is_stacked_residual': hp.choice('is_stacked_residual', [False, True])
     }
 
     def __init__(self, hyperparameters, input_size, output_size):
@@ -256,20 +271,22 @@ class Model(nn.Module):
 
         hidden_size = self.hyperparameters['hidden_size']
         self._in = nn.Linear(input_size, hidden_size)
-        # self.larnn = LARNN(
-        #     input_size=self.hyperparameters['input_size'],
-        #     hidden_size=self.hyperparameters['hidden_size'],
-        #     num_layers=self.hyperparameters['num_layers'],
-        #     is_stacked_residual=self.hyperparameters['is_stacked_residual'],
-        #     larnn_mode=self.hyperparameters['larnn_mode'],
-        #     use_positional_encoding=self.hyperparameters['use_positional_encoding'],
-        #     dropout=self.hyperparameters['dropout_drop_proba']
-        # )
-        self._larnn = nn.LSTM(
+        self._larnn = LARNN(
             input_size=hidden_size,
             hidden_size=hidden_size,
+            attention_heads=self.hyperparameters['attention_heads'],
             num_layers=self.hyperparameters['num_layers'],
-            dropout=self.hyperparameters['dropout_drop_proba'])
+            larnn_window_size=self.hyperparameters['larnn_window_size'],
+            larnn_mode=self.hyperparameters['larnn_mode'],
+            use_positional_encoding=self.hyperparameters['use_positional_encoding'],
+            is_stacked_residual=self.hyperparameters['is_stacked_residual'],
+            dropout=self.hyperparameters['dropout_drop_proba']
+        )
+        # self._larnn = nn.LSTM(
+        #     input_size=hidden_size,
+        #     hidden_size=hidden_size,
+        #     num_layers=self.hyperparameters['num_layers'],
+        #     dropout=self.hyperparameters['dropout_drop_proba'])
         self._out = nn.Linear(hidden_size, output_size)
 
     def forward(self, input, state=None):
