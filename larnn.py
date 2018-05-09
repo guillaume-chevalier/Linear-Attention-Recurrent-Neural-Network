@@ -52,7 +52,7 @@ class LARNN(nn.Module):
 
         self.larnn_cells = [
             LARNNCell(input_size, hidden_size, attention_heads, larnn_window_size,
-                      larnn_mode, use_positional_encoding, dropout)
+                      larnn_mode, use_positional_encoding, dropout).to(device)
             for _ in range(num_layers)]
 
         self.num_layers = num_layers
@@ -113,8 +113,8 @@ class LARNNCellState(nn.Module):
 
         self.states = deque()
         self.states.append((
-            torch.zeros([1, batch_size, hidden_size]),  # hidden (gated output)
-            torch.zeros([1, batch_size, hidden_size])  # memory cell (inner)
+            torch.zeros([1, batch_size, hidden_size]).to(device),  # hidden (gated output)
+            torch.zeros([1, batch_size, hidden_size]).to(device)  # memory cell (inner)
         ))
 
         if use_positional_encoding:

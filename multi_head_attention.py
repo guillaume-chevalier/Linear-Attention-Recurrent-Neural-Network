@@ -142,6 +142,6 @@ class PositionalEncoding(nn.Module):
         pos = Variable(self.pe, requires_grad=False)
         # print(pos.size(), x.size())  # [batch_size, -1, sequence_length], [batch_size, sequence_length, hidden_size]
         pe = self.pe[:, -x.size(1):]  # limiting positional encoding to a poentially shorter sequence_length
-        # print("teretretretr", pe.size(), x.size())
+        # print("pe.size(), x.size()", pe.size(), x.size())
         x = torch.cat([x, pe], dim=-1)
         return self.dropout(x)
