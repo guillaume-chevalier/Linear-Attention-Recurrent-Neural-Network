@@ -217,10 +217,11 @@ def train(hyperparameters, dataset, evaluation_metric, device):
     return model, model_name, result
 
 def adjust_lr(optim, base_lr, epoch, decay_each_N_epoch):
-    if epoch == 0:
-        # Warmum phase!
-        new_lr = base_lr / 5
-    else:
+    # if epoch == 0:
+    #     # Warmum phase!
+    #     new_lr = base_lr / 5
+    # else:
+    if True:
         # Decay at each `decay_each_N_epoch`
         new_lr = base_lr * (
             0.75**(epoch // decay_each_N_epoch))
@@ -254,15 +255,15 @@ class Model(nn.Module):
         # This loguniform scale will multiply the learning rate, so as to make
         # it vary exponentially, in a multiplicative fashion rather than in
         # a linear fashion, to handle his exponentialy varying nature:
-        'learning_rate': 0.001 * hp.loguniform('learning_rate_mult', -0.5, 0.5),
+        'learning_rate': 0.005 * hp.loguniform('learning_rate_mult', -0.5, 0.5),
         # How many epochs before the learning_rate is multiplied by 0.75
         'decay_each_N_epoch': hp.quniform('decay_each_N_epoch', 3 - 0.499, 10 + 0.499, 1),
         # L2 weight decay:
-        'l2_weight_reg': 0.005 * hp.loguniform('l2_weight_reg_mult', -1.3, 1.3),
+        'l2_weight_reg': 0.0005 * hp.loguniform('l2_weight_reg_mult', -1.3, 1.3),
         # Number of loops on the whole train dataset
-        'training_epochs': 80,
+        'training_epochs': 50,
         # Number of examples fed per training step
-        'batch_size': 128,
+        'batch_size': 64,
 
         ### LSTM/RNN parameters
         # The dropout on the hidden unit on top of each LARNN cells
