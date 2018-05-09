@@ -52,9 +52,6 @@ class LARNN(nn.Module):
             LARNNCell(input_size, hidden_size, attention_heads, larnn_window_size,
                       larnn_mode, use_positional_encoding, dropout)
             for _ in range(num_layers)]
-        self.batch_norms = [
-            torch.nn.BatchNorm1d(hidden_size)
-            for _ in range(num_layers)]
 
         self.num_layers = num_layers
         self.is_stacked_residual = is_stacked_residual
@@ -78,8 +75,6 @@ class LARNN(nn.Module):
                 hidden = hidden + _out
             else:
                 hidden = _out
-            s = hidden.size()  # BatchNorm1d only accepts 2D inputs:
-            hidden = self.batch_norms[i](hidden.view(-1, self.hidden_size)).view(s)
             new_state.append(_state)
 
         output = hidden
@@ -170,6 +165,7 @@ class LARNNCell(nn.Module):
         self.hidden_to_hidden = nn.Linear(hidden_size, 4 * hidden_size, bias=False)
         self.reset_params()
         self.batch_norm_pre_activation = torch.nn.BatchNorm1d(4 * hidden_size)
+        self.batch_norm_post_activation = torch.nn.BatchNorm1d(hidden_size)
 
         self.input_and_hidden_to_query = nn.Linear(input_size + hidden_size, hidden_size, bias=True)
         if larnn_mode == 'residual':
@@ -206,7 +202,8 @@ class LARNNCell(nn.Module):
         input_gate = packed_gates[:, self.hidden_size:2 * self.hidden_size]
         cell = torch.mul(input_values, input_gate) + torch.mul(prev_cell, forget_gate)
         output_gate = packed_gates[:, -self.hidden_size:]
-        hidden = torch.mul(output_gate, cell.tanh())
+        hidden = torch.mul(output_gate, F.elu(cell))  # elu instead of tahn
+        hidden = self.batch_norm_post_activation(hidden)  # specially, batch norm here
 
         # Bundle for output:
         if self.training and self.dropout > 0.0:
