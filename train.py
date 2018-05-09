@@ -149,11 +149,24 @@ def train(hyperparameters, dataset, evaluation_metric, device):
 
         # Validation
         model.eval()
-        inputs = Variable(torch.from_numpy(dataset.X_test).float().transpose(1, 0)).to(device)
-        targets = Variable(torch.from_numpy(dataset.Y_test).long()).to(device)
-        outputs, _ = model(inputs, state=None)
-        loss = criterion(outputs, targets)
-        optimizer.zero_grad()
+        nb_test_examples = dataset.X_test.shape[0]
+        all_targets = []
+        all_outputs = []
+        all_losses = []
+        for step, (start, end) in enumerate(
+                zip(range(0, nb_test_examples, hyperparameters['batch_size']),
+                    range(hyperparameters['batch_size'], nb_examples + 1, hyperparameters['batch_size']))):
+            inputs = Variable(torch.from_numpy(dataset.X_test[start:end]).float().transpose(1, 0)).to(device)
+            targets = Variable(torch.from_numpy(dataset.Y_test[start:end]).long()).to(device)
+            outputs, _ = model(inputs, state=None)
+            loss = criterion(outputs, targets)
+            optimizer.zero_grad()
+            all_targets.append(targets.to("cpu"))
+            all_outputs.append(outputs.to("cpu"))
+            all_losses.append(loss.to("cpu"))
+        all_targets = torch.cat(all_targets, dim=0)
+        all_outputs = torch.cat(all_outputs, dim=0)
+        all_losses = all_losses.mean()
 
         # Validation metrics
         validation_accuracies.append(metrics.accuracy_score(
