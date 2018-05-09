@@ -239,10 +239,10 @@ class Model(nn.Module):
         'dropout_drop_proba': hp.uniform('dropout_drop_proba', 0.1, 0.5),
         # Let's multiply the "default" number of hidden units:
         'hidden_size': 42 * hp.loguniform('hidden_size_mult', -0.6, 0.6),
-        # The number 'h' of attention heads:
-        'attention_heads': 8,
-        # Use batch normalisation at more places?
-        'use_BN': True,
+        # The number 'h' of attention heads: from 1 to 20 attention heads.
+        'attention_heads': hp.quniform(
+            'attention_heads', 1 - 0.499, 20 + 0.499, 1)]
+        ),
 
         ### LARNN (Linear Attention RNN) parameters
         # How restricted is the attention back in time steps (across sequence)
