@@ -78,7 +78,8 @@ class LARNN(nn.Module):
                 hidden = hidden + _out
             else:
                 hidden = _out
-            hidden = self.batch_norms[i](hidden)
+            s = hidden.size()  # BatchNorm1d only accepts 2D inputs:
+            hidden = self.batch_norms[i](hidden.view(-1, self.hidden_size)).view(s)
             new_state.append(_state)
 
         output = hidden
@@ -278,6 +279,7 @@ if __name__ == '__main__':
                 )
                 X_train = torch.autograd.Variable(torch.rand((time_steps, batch_size, input_size)))  # , requires_grad=True)
 
+                larnn.train()
                 _output, _hidden = larnn(X_train)
 
                 print(_output.size())
