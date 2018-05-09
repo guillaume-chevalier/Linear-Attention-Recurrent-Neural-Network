@@ -9,6 +9,8 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
+from multi_head_attention import MultiHeadedAttention
+
 
 __author__ = "Guillaume Chevalier"
 __license__ = "MIT License"
@@ -50,6 +52,9 @@ class LARNN(nn.Module):
             LARNNCell(input_size, hidden_size, attention_heads, larnn_window_size,
                       larnn_mode, use_positional_encoding, dropout)
             for _ in range(num_layers)]
+        self.batch_norms = [
+            torch.nn.BatchNorm1d(hidden_size)
+            for _ in range(num_layers)]
 
         self.num_layers = num_layers
         self.is_stacked_residual = is_stacked_residual
@@ -73,6 +78,7 @@ class LARNN(nn.Module):
                 hidden = hidden + _out
             else:
                 hidden = _out
+            hidden = self.batch_norms[i](hidden)
             new_state.append(_state)
 
         output = hidden
@@ -124,11 +130,6 @@ class LARNNCellState(nn.Module):
 
 
 class LARNNCell(nn.Module):
-    # Note: This LARNNCell class is inspired from the LSTM implementation here:
-    # https://github.com/pytorch/benchmark/tree/master/benchmarks/lstm_variants
-    # It has been cleaned and adapted here to the LARNN to have its multi-head
-    # attention mechanism.
-
     def __init__(self, input_size, hidden_size, attention_heads, larnn_window_size,
                  larnn_mode='residual', use_positional_encoding=True, dropout=0.0):
         """A LARNN Cell on which it's possible to loop as an LSTM Cell.
@@ -164,232 +165,88 @@ class LARNNCell(nn.Module):
         self.dropout = dropout
         assert hidden_size % attention_heads == 0, "'hidden_size' must be divisible by 'attention_heads'."
 
-        self.i2h = nn.Linear(input_size, 4 * hidden_size, bias=True)
-        self.h2h = nn.Linear(hidden_size, 4 * hidden_size, bias=False)
-        self.bn_preact = torch.nn.BatchNorm1d(4 * hidden_size)
+        self.input_to_hidden = nn.Linear(input_size, 4 * hidden_size, bias=True)
+        self.hidden_to_hidden = nn.Linear(hidden_size, 4 * hidden_size, bias=False)
+        self.reset_params()
+        self.batch_norm_pre_activation = torch.nn.BatchNorm1d(4 * hidden_size)
 
-        self.c2v = nn.Linear(hidden_size, hidden_size, bias=True)
-        self.ih2q = nn.Linear(input_size + hidden_size, hidden_size, bias=True)
+        self.input_and_hidden_to_query = nn.Linear(input_size + hidden_size, hidden_size, bias=True)
         if larnn_mode == 'residual':
             # Attention will be added to Wx and Wh as `Wx*x + Wh*h + Wa*a + bias1`.
-            self.a2c = nn.Linear(hidden_size, 4 * hidden_size, bias=True)
+            self.attention_to_cell = nn.Linear(hidden_size, 4 * hidden_size, bias=True)
         elif larnn_mode == 'layer':
             # Attention will be post-processed like `Wa*(concat(x, h, a)) + bias2`
-            self.a2c = nn.Linear(3 * hidden_size, 4 * hidden_size, bias=True)
+            self.attention_to_cell = nn.Linear(3 * hidden_size, 4 * hidden_size, bias=True)
 
-        self.reset_parameters()
+        self.multi_headed_attention = MultiHeadedAttention(attention_heads, hidden_size)
 
-    def reset_parameters(self):
-        stdv = 1.0 / math.sqrt(self.hidden_size)
-        for weight in self.parameters():
-            weight.data.uniform_(-stdv, stdv)
+    def reset_params(self):
+        std = 1.0 / math.sqrt(self.hidden_size)
+        for w in self.parameters():
+            w.data.uniform_(-std, std)
 
     def forward(self, input, state):
-        x = input
+        # Unpack arguments:
         previous_state = state.get_most_recent_cell()
-        h, c = previous_state
+        prev_hidden, prev_cell = previous_state
+        prev_hidden = prev_hidden.view(prev_hidden.size(1), -1)
+        prev_cell = prev_cell.view(prev_cell.size(1), -1)
+        input = input.view(input.size(0), -1)
 
-        h = h.view(h.size(1), -1)
-        c = c.view(c.size(1), -1)
-        x = x.view(x.size(0), -1)
+        # LARNN's Linear Attention:
+        pre_activation = self.linear_attention(input, prev_hidden, state)
+        # replacing the previous line with the following one would be an LSTM not a LARNN:
+        # pre_activation = self.input_to_hidden(input) + self.hidden_to_hidden(prev_hidden)
 
-        # Linear mappings
-        preact = self.linear_attention(x, h, state)
+        # Classic LSTM functions:
+        input_values = pre_activation[:, :self.hidden_size].tanh()
+        packed_gates = pre_activation[:, self.hidden_size:].sigmoid()
+        forget_gate = packed_gates[:, :self.hidden_size]
+        input_gate = packed_gates[:, self.hidden_size:2 * self.hidden_size]
+        cell = torch.mul(input_values, input_gate) + torch.mul(prev_cell, forget_gate)
+        output_gate = packed_gates[:, -self.hidden_size:]
+        hidden = torch.mul(output_gate, cell.tanh())
 
-        # activations
-        gates = preact[:, :3 * self.hidden_size].sigmoid()
-        g_t = preact[:, 3 * self.hidden_size:].tanh()
-        i_t = gates[:, :self.hidden_size]
-        f_t = gates[:, self.hidden_size:2 * self.hidden_size]
-        o_t = gates[:, -self.hidden_size:]
-
-        # cell computations
-        c_t = torch.mul(c, f_t) + torch.mul(i_t, g_t)
-        h_t = torch.mul(o_t, c_t.tanh())
-
+        # Bundle for output:
         if self.training and self.dropout > 0.0:
-            F.dropout(h_t, p=self.dropout, training=self.training, inplace=True)
-
-        # Reshape for compatibility
-        h_t = h_t.view(1, h_t.size(0), -1)
-        c_t = c_t.view(1, c_t.size(0), -1)
-
-        # Update Linear Attention's Values
-        current_state = (h_t, c_t)
+            F.dropout(hidden, p=self.dropout, training=self.training, inplace=True)
+        hidden = hidden.view(1, hidden.size(0), -1)
+        cell = cell.view(1, cell.size(0), -1)
+        current_state = (hidden, cell)
         state.update_most_recent_state(current_state)
 
-        return h_t, state
+        return hidden, state
 
     def linear_attention(self, x, h, state):
         prev_cells = state.get_past_cells_for_attention(
             use_positional_encoding=self.use_positional_encoding)  # shape (larnn_window_size, batch_size, hidden_size)
 
         # `V = K = Wk*(a "larnn_window_size" number of most recent cells)`
-        values = V = K = self.c2v(prev_cells)  # shape (larnn_window_size, batch_size, hidden_size)
+        values = V = K = prev_cells  # shape (larnn_window_size, batch_size, hidden_size)
 
         # `Q = Wxh*concat(x, h) + bxh`
         ih = torch.cat([x, h], -1)  # Concat on features
-        query = Q = self.ih2q(ih)  #   # shape (batch_size, hidden_size)
+        query = Q = self.input_and_hidden_to_query(ih)  #   # shape (batch_size, hidden_size)
 
         # `a(K, Q, V) = MultiHeadSoftmax(Q*K'/sqrt(dk))*V` like in Attention Is All You Need (AIAYN).
-        # attention = self.multi_head_attention(query, values)  # TODO: multi-head
-        attention = self.compute_attention_heads(query, values)
+        query = query.unsqueeze(1)  # wants [batch_size, 1, hidden_size]
+        values = values.transpose(0, 1)  # wants [batch_size, larnn_window_size, hidden_size]
+        attention = self.multi_headed_attention(query, values, values)  # attention result is [batch_size, 1, hidden_size]
+        attention = attention.squeeze()  # wants [batch_size, hidden_size]
 
         if self.larnn_mode == 'residual':
             # Attention will be added to Wx and Wh as `Wx*x + Wh*h + Wa*a + b`.
-            Wx_Wh_Wa_b = self.i2h(x) + self.h2h(h) + self.a2c(attention)
-            preact = Wx_Wh_Wa_b
+            Wx_Wh_Wa_b = self.input_to_hidden(x) + self.hidden_to_hidden(h) + self.attention_to_cell(attention)
+            pre_activation = Wx_Wh_Wa_b
         elif self.larnn_mode == 'layer':
             # Attention will be post-processed like `Wa*(concat(x, h, a)) + b`
             Wxha_b = torch.cat([x, h, attention], -1)  # Concat on features
-            preact = self.a2c(Wx_Wh_b_a)
+            pre_activation = self.attention_to_cell(Wxha_b)
         else:
             raise ValueError("'larnn_mode' must take the string value 'residual' or 'layer', not {}".format(self.larnn_mode))
 
-        preac = self.bn_preact(preact)
-        return preact
-
-    def multi_head_attention(self, query, values):
-
-        # TODO: debugs
-
-        # hidden_size == attention_heads x d_k
-        d_k = int(round(self.hidden_size / self.attention_heads))
-
-        values_headed = values.view(self.state.batch_size, self.attention_heads, -1, d_k)
-
-        values_headed = self.compute_attention_heads(query, values_headed)
-
-        values_headed = values_headed.transpose(1, 2).view(
-            self.state.batch_size, -1, hidden_size)
-
-        return values_headed
-
-    def compute_attention_heads(self, query, values):
-        d_k = values.size(-1)
-
-        print("values:", values.size())  # (larnn_window_size, batch_size, hidden_size)
-        print("query:", query.size())  # (batch_size, hidden_size)
-
-        # augment query to be :  (1, batch_size, hidden_size)
-        query = query
-        print("query2:", query.size())
-
-        for i in range(self.attention_heads):
-            subvalues = values[..., i*d_k:(i+1)*d_k].unsqueeze(0)  # (batch_size, hidden_size) --> (1, batch_size, d_k)
-            subquery = query[..., i*d_k:(i+1)*d_k]  # (larnn_window_size, batch_size, hidden_size) --> (larnn_window_size, batch_size, d_k)
-
-            # dot prod the query to attention, will result in (larnn_window_size, batch_size, hidden_size) and
-            # then the dot will reduce the sum down to (larnn_window_size, batch_size, 1).
-            qa = torch.dot(query, attention)
-            print("qa:", qa.size())
-
-            # split "hidden_size" dimension to "attention_heads x d_k"
-            qa = qa.view(larnn_window_size, self.state.batch_size, self.attention_heads, self.attention_heads, d_k)
-
-            # multi-head softmax on "larnn_window_size" dimension
-
-            # gate the value vectors with the attention.
-
-        # pack up softmaxes back to (larnn_window_size, batch_size, hidden_size)
-
-        # sum on larnn_window_size such as to get a vector of (1, batch_size, hidden_size)
-
-        # return this.
-
-        scores = torch.matmul(query, values.transpose(2, 1)) / math.sqrt(d_k)
-        print("scores:", scores.size())  # (larnn_window_size, batch_size, batch_size)
-
-        p_attention = F.softmax(scores, -1)
-        print("p_attention:", p_attention.size())  # (larnn_window_size, batch_size, batch_size)
-
-        attention_head_result = torch.matmul(p_attention, values)
-        print("attention_head_result:", attention_head_result.size())  # (larnn_window_size, batch_size, hidden_size)
-
-        return attention_head_result
-
-
-def clones(module, N):
-    # This function is adapted from:
-    #     https://github.com/harvardnlp/annotated-transformer
-    #     MIT License, Copyright (c) 2018 Alexander Rush
-    "Produce N identical layers."
-    return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
-
-
-def attention(query, key, value, dropout=None):
-    # This function is adapted from:
-    #     https://github.com/harvardnlp/annotated-transformer
-    #     MIT License, Copyright (c) 2018 Alexander Rush
-    "Compute 'Scaled Dot Product Attention'"
-    # batch_size = 64
-    # key_values_sequence_length = 10
-    # query_sequence_length = 1
-    # hidden_size = 32
-    # attention_heads = 8
-    d_k = query.size(-1)
-    # print("    key 1:", key.size())  # key 1: torch.Size([64, 8, 10, 4])
-    key = key.transpose(-2, -1)
-    # print("    key 2:", key.size())  # key 2: torch.Size([64, 8, 4, 10])
-    # print("    query:", query.size())  # query: torch.Size([64, 8, 1, 4])
-    scores = torch.matmul(query, key) / math.sqrt(d_k)
-    # print("    scores:", scores.size())  # scores: torch.Size([64, 8, 1, 10])
-    p_attn = F.softmax(scores, dim = -1)
-    # print("    p_attn:", p_attn.size())  # p_attn: torch.Size([64, 8, 1, 10])
-    if dropout is not None:
-        p_attn = dropout(p_attn)
-    attention_result = torch.matmul(p_attn, value)
-    # print("    attention_result:", attention_result.size())  # attention_result: torch.Size([64, 8, 1, 4])
-    return attention_result, p_attn
-
-
-class MultiHeadedAttention(nn.Module):
-    # This class is adapted from:
-    #     https://github.com/harvardnlp/annotated-transformer
-    #     MIT License, Copyright (c) 2018 Alexander Rush
-
-    def __init__(self, h, hidden_size, linears=True, dropout=0.1):
-        "Take in model size and number of heads."
-        super(MultiHeadedAttention, self).__init__()
-        assert hidden_size % h == 0
-        # We assume d_v always equals d_k
-        self.d_k = hidden_size // h
-        self.h = h
-        if linears:
-            self.linears = clones(nn.Linear(hidden_size, hidden_size), 4)
-        else:
-            self.linears = [lambda arg: arg] * 4
-        self.attn = None
-        self.dropout = nn.Dropout(p=dropout)
-
-    def forward(self, query, key, value):
-        "Implements Figure 2"
-        # batch_size = 64
-        # key_values_sequence_length = 10
-        # query_sequence_length = 1
-        # hidden_size = 32
-        # attention_heads = 8
-        nbatches = query.size(0)
-
-        # 1) Do all the linear projections in batch from hidden_size => h x d_k
-        # print("query, key, value 1:", query.size(), key.size(), value.size())  # query, key, value 1: torch.Size([64, 1, 32]) torch.Size([64, 10, 32]) torch.Size([64, 10, 32])
-        query, key, value = \
-            [l(x).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
-             for l, x in zip(self.linears, (query, key, value))]
-        # print("query, key, value 2:", query.size(), key.size(), value.size())  # query, key, value 2: torch.Size([64, 8, 1, 4]) torch.Size([64, 8, 10, 4]) torch.Size([64, 8, 10, 4])
-
-        # 2) Apply attention on all the projected vectors in batch.
-        x, self.attn = attention(query, key, value, self.dropout)
-        # print("x 1:", x.size())  # x 1: torch.Size([64, 8, 1, 4])
-
-        # 3) "Concat" using a view and apply a final linear.
-        x = x.transpose(1, 2).contiguous() \
-             .view(nbatches, -1, self.h * self.d_k)
-        # print("x 2:", x.size())  # x 2: torch.Size([64, 1, 32])
-
-        x = self.linears[-1](x)
-        # print("x 3:", x.size())  # x 3: torch.Size([64, 1, 32])
-        return x
+        preac = self.batch_norm_pre_activation(pre_activation)
+        return pre_activation
 
 
 if __name__ == '__main__':
@@ -397,27 +254,33 @@ if __name__ == '__main__':
 
     for use_positional_encoding in [False, True]:
         for is_stacked_residual in [False, True]:
-            for larnn_mode in ['concat', 'residual', 'layer']:
+            for larnn_mode in ['residual', 'layer']:
 
                 print(
                     "use_positional_encoding, is_stacked_residual, larnn_mode:",
                     use_positional_encoding, is_stacked_residual, larnn_mode)
 
-                larnn = LARNN(
-                    input_size, hidden_size, num_layers,
-                    is_stacked_residual=is_stacked_residual,
-                    larnn_mode=larnn_mode, dropout=0.0)
+                time_steps = 128
+                batch_size = 64
+                input_size = 32
+                hidden_size = 32
 
-                input_shape = (
-                    hyperparameters_sample['time_steps'],
-                    hyperparameters_sample['batch_size'],
-                    hyperparameters_sample['input_size'])
-                X_train = torch.autograd.Variable(
-                    torch.rand(input_shape), requires_grad=True)
+                larnn = LARNN(
+                    input_size=input_size,
+                    hidden_size=hidden_size,
+                    attention_heads=8,
+                    num_layers=2,
+                    larnn_window_size=10,
+                    larnn_mode=larnn_mode,
+                    use_positional_encoding=use_positional_encoding,
+                    is_stacked_residual=is_stacked_residual,
+                    dropout=0.2
+                )
+                X_train = torch.autograd.Variable(torch.rand((time_steps, batch_size, input_size)))  # , requires_grad=True)
+
                 _output, _hidden = larnn(X_train)
 
                 print(_output.size())
-                print(_hidden)
                 print("")
 
                 del larnn
