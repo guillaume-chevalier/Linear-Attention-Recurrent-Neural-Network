@@ -6,9 +6,13 @@ import sys
 import traceback
 import uuid
 
+import numpy as np
 from hyperopt import hp, STATUS_OK, STATUS_FAIL
+from sklearn import metrics
+from sklearn.utils import shuffle
 import torch
 from torch import nn
+from torch.autograd import Variable
 
 from json_utils import load_best_hyperspace, save_json_result, print_json
 from larnn import LARNN
@@ -40,11 +44,11 @@ __notice__ = """
 """
 
 
-def optimize_model(hyperparameters, dataset, training_function):
+def optimize_model(hyperparameters, dataset, evaluation_metric):
     """Build a LARNN and train it on given dataset."""
 
     try:
-        model, model_name, result = training_function(hyperparameters, dataset)
+        model, model_name, result = train(hyperparameters, dataset, evaluation_metric)
 
         # Save training results to disks with unique filenames
         save_json_result(model_name, dataset.NAME, result)
@@ -73,85 +77,152 @@ def optimize_model(hyperparameters, dataset, training_function):
     print("\n\n")
 
 
-def train_for_uci_har(hyperparameters, dataset):
+def train(hyperparameters, dataset, evaluation_metric):
     """Build the deep CNN model and train it."""
 
-    # Filling missing values of hyperparameters for what regards the dataset:
-    hyperparameters['time_steps'] = 128
-    hyperparameters['input_size'] = 9
+    # Sanitizing integer parameters that shouldn't be float:
+    hyperparameters['larnn_window_size'] = int(hyperparameters['larnn_window_size'])
+
+    # hidden_size must be divisible by attention_heads
+    hyperparameters['hidden_size'] = int(round(hyperparameters['hidden_size'] / hyperparameters['attention_heads'])) * hyperparameters['attention_heads']
 
     print("LARNN with hyperparameters:")
     print_json(hyperparameters)
-    model = Model(hyperparameters)
 
-    # Train net:
-    # K.set_learning_phase(1)
-    history = model.fit(
-        [dataset.x_train],
-        [dataset.y_train],
-        batch_size=int(hyperparameters['batch_size']),
-        epochs=EPOCHS,
-        shuffle=True,
-        verbose=1,
-        validation_data=([dataset.x_test], [dataset.y_test])
-    ).history
+    # Build model
+    model = Model(
+        hyperparameters,
+        input_size=dataset.INPUT_FEATURES_SIZE,
+        output_size=dataset.OUTPUT_CLASSES_SIZE)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=hyperparameters['learning_rate'],
+        weight_decay=hyperparameters['l2_weight_reg'])
 
-    # Test net:
-    # K.set_learning_phase(0)
-    score = model.evaluate([x_test], [y_test, y_test_coarse], verbose=0)
-    max_acc = max(history['val_fine_outputs_acc'])
+    # Metadata kept
+    train_accuracies = []
+    train_f1_scores = []
+    train_losses = []
+    validation_accuracies = []
+    validation_f1_scores = []
+    validation_losses = []
 
-    model_name = "model_{}_{}".format(str(max_acc), str(uuid.uuid4())[:5])
-    print("Model name: {}".format(model_name))
-    print(history.keys())
-    print(history)
-    print(score)
+    # Train on shuffled examples in batch for each epoch
+    for epoch in range(hyperparameters['training_epochs']):
+        print("Training epoch {}:".format(epoch))
+        shuffled_X, shuffled_Y = shuffle(dataset.X_train, dataset.Y_train, random_state=epoch*42)
+        nb_examples = dataset.X_train.shape[0]
+        for step, (start, end) in enumerate(
+                zip(range(0, nb_examples, hyperparameters['batch_size']),
+                    range(hyperparameters['batch_size'], nb_examples + 1, hyperparameters['batch_size']))):
+            X = shuffled_X[start:end]
+            Y = shuffled_Y[start:end]
+
+            # Train
+            model.train()
+            optimizer.zero_grad()
+            inputs = Variable(torch.from_numpy(X).float().transpose(1, 0))
+            targets = Variable(torch.from_numpy(Y).long())
+            outputs, _ = model(inputs, state=None)  # Truncated BPTT not used.
+            loss = criterion(outputs, targets)
+            loss.backward()
+            optimizer.step()
+
+            # Train metrics
+            train_accuracies.append(metrics.accuracy_score(
+                Y, outputs.argmax(-1)))
+            train_f1_scores.append(metrics.f1_score(
+                Y, outputs.argmax(-1), average="weighted"))
+            train_losses.append(loss.data.item())
+
+            # Print occasionnaly
+            if step % 3 == 0 and step !=0:
+                print("    Training step {}: accuracy={}, f1={}, loss={}".format(
+                    step, train_accuracies[-1], train_f1_scores[-1], train_losses[-1]))
+
+                break  # TODO: remove for full training.
+
+        # Validation
+        model.eval()
+        inputs = Variable(torch.from_numpy(dataset.X_test).float().transpose(1, 0))
+        targets = Variable(torch.from_numpy(dataset.Y_test).long())
+        outputs, _ = model(inputs, state=None)
+        loss = criterion(outputs, targets)
+        optimizer.zero_grad()
+
+        # Validation metrics
+        validation_accuracies.append(metrics.accuracy_score(
+            dataset.Y_test, outputs.argmax(-1)))
+        validation_f1_scores.append(metrics.f1_score(
+            dataset.Y_test, outputs.argmax(-1), average="weighted"))
+        validation_losses.append(loss.data.item())
+
+        # Print
+        print("        Validation: accuracy={}, f1={}, loss={}".format(
+            validation_accuracies[-1], validation_f1_scores[-1], validation_losses[-1]))
+
+        if epoch > 10:
+            break  # TODO: remove for full training.
+
+    # Aggregate data for serialization
+    history = {
+        'train_accuracies': train_accuracies,
+        'train_f1_scores': train_f1_scores,
+        'train_losses': train_losses,
+        'validation_accuracies': validation_accuracies,
+        'validation_f1_scores': validation_f1_scores,
+        'validation_losses': validation_losses
+    }
+
+    # Create "result" for Hyperopt and serialization
+    full_metric_name = 'validation_{}'.format(evaluation_metric)
+    max_score = max(history[full_metric_name])
+    model_name = "model_{}_{}".format(str(max_score), str(uuid.uuid4())[:5])
+    print("Model name: {}.txt.json".format(model_name))
     result = {
-        # We plug "-val_fine_outputs_acc" as a
-        # minimizing metric named 'loss' by Hyperopt.
-        'loss': -max_acc,
-        'real_loss': score[0],
-        # Fine stats:
-        'best_loss': min(history['val_fine_outputs_loss']),
-        'best_accuracy': max(history['val_fine_outputs_acc']),
-        'end_loss': score[1],
-        'end_accuracy': score[3],
+        # Note: 'loss' in Hyperopt means 'score', so we use something else it's not the real loss.
+        'loss': -max_score,
+        'true_loss': -max_score,
+        'true_loss_variance': np.var(history[full_metric_name][-10:]),  # Note that the "-10" is in epochs count.
+        'real_best_loss': min(validation_losses),  # This is the only "loss" literally-speaking. Others are hyperopt losses for `fmin` meta-optimization.
+        # "Best" metrics throughout training:
+        'best_train_accuracy': max(train_accuracies),
+        'best_train_f1_score': max(train_f1_scores),
+        'best_validation_accuracy': max(validation_accuracies),
+        'best_validation_f1_score': max(validation_f1_scores),
         # Misc:
         'model_name': model_name,
+        'dataset_name': dataset.NAME,
         'space': hyperparameters,
         'history': history,
         'status': STATUS_OK
     }
     print("RESULT:")
     print_json(result)
-
     return model, model_name, result
 
 
-def train_for_opportunity(hyperparameters, dataset):
-    return train_for_uci_har(hyperparameters, dataset)
-
 dataset_name_to_class = {
     'UCIHAR': UCIHARDataset,
-    'Opportunity': OpportunityDataset
-}
-dataset_name_to_training_function = {
-    'UCIHAR': train_for_uci_har,
-    'Opportunity': train_for_opportunity
-}
+    'Opportunity': OpportunityDataset}
+dataset_name_to_evaluation_metric = {
+    'UCIHAR': "accuracies",
+    'Opportunity': "f1_scores"}
 
 def get_optimizer(dataset_name):
     _dataset = dataset_name_to_class[dataset_name]()
-    _training_func = dataset_name_to_training_function[dataset_name]
+    _evaluation_metric = dataset_name_to_evaluation_metric[dataset_name]
 
     # Returns a callable for Hyperopt Optimization (for `fmin`):
     return lambda hyperparameters: (
-        optimize_model(hyperparameters, _dataset, _training_func)
+        optimize_model(hyperparameters, _dataset, _evaluation_metric)
     )
 
 
 class Model(nn.Module):
     HYPERPARAMETERS_SPACE = {
+        ### Optimization parameters
         # This loguniform scale will multiply the learning rate, so as to make
         # it vary exponentially, in a multiplicative fashion rather than in
         # a linear fashion, to handle his exponentialy varying nature:
@@ -163,49 +234,78 @@ class Model(nn.Module):
         # Number of examples fed per training step
         'batch_size': 64,
 
+        ### LSTM/RNN parameters
         # The dropout on the hidden unit on top of each LARNN cells
         'dropout_drop_proba': hp.uniform('dropout_drop_proba', 0.1, 0.5),
         # Let's multiply the "default" number of hidden units:
         'hidden_size': 42 * hp.loguniform('hidden_size_mult', -0.6, 0.6),
+        # The number 'h' of attention heads:
+        'attention_heads': 8,
         # Use batch normalisation at more places?
         'use_BN': True,
-        # Number of layers, either stacked or residualy stacked:
-        'num_layers': hp.choice('num_layers', [2, 3]),
-        # Use residual connections for the 2nd (stacked) layer?
-        'is_stacked_residual': hp.choice('is_stacked_residual', [False, True]),
+
+        ### LARNN (Linear Attention RNN) parameters
+        # How restricted is the attention back in time steps (across sequence)
+        'larnn_window_size': hp.uniform('larnn_window_size', 1, 50),
         # How the new attention is placed in the LSTM
-        'larnn_mode': hp.choice('attention_type', [
-            'concat',  # Attention will be concatenated to x and h.
-            'residual',  # Attention will be added to x and h.
-            'layer'  # Attention will be computed from a layer with x and h.
+        'larnn_mode': hp.choice('larnn_mode', [
+            'residual',  # Attention will be added to Wx and Wh as `Wx*x + Wh*h + Wa*a + b`.
+            'layer'  # Attention will be post-processed like `Wa*(concat(x, h, a)) + bs`
+            # Note:
+            #     `a(K, Q, V) = MultiHeadSoftmax(Q*K'/sqrt(dk))*V` like in Attention Is All You Need (AIAYN).
+            #     `Q = Wxh*concat(x, h) + bxh`
+            #     `V = K = Wk*(a "larnn_window_size" number of most recent cells)`
         ]),
         # Wheter or not to use Positional Encoding similar to the one used in https://arxiv.org/abs/1706.03762
         'use_positional_encoding': hp.choice('use_positional_encoding', [False, True]),
 
-        # Dataset-dependant values to be filled:
-        'time_steps': None,
-        'input_size': None
+        # Number of layers, either stacked or residualy stacked:
+        'num_layers': hp.choice('num_layers', [2, 3]),
+        # Use residual connections for the 2nd (stacked) layer?
+        'is_stacked_residual': hp.choice('is_stacked_residual', [False, True])
     }
 
-    def __init__(self, hyperparameters):
+    def __init__(self, hyperparameters, input_size, output_size):
+        super().__init__()
         self.hyperparameters = hyperparameters
 
-        self.larnn = LARNN(
-            input_size=self.hyperparameters['input_size'],
-            hidden_size=self.hyperparameters['hidden_size'],
+        hidden_size = self.hyperparameters['hidden_size']
+        self._in = nn.Linear(input_size, hidden_size)
+        self._larnn = LARNN(
+            input_size=hidden_size,
+            hidden_size=hidden_size,
+            attention_heads=self.hyperparameters['attention_heads'],
             num_layers=self.hyperparameters['num_layers'],
-            is_stacked_residual=self.hyperparameters['is_stacked_residual'],
+            larnn_window_size=self.hyperparameters['larnn_window_size'],
             larnn_mode=self.hyperparameters['larnn_mode'],
             use_positional_encoding=self.hyperparameters['use_positional_encoding'],
-            dropout=self.hyperparameters['dropout_drop_proba'],
+            is_stacked_residual=self.hyperparameters['is_stacked_residual'],
+            dropout=self.hyperparameters['dropout_drop_proba']
         )
+        # self._larnn = nn.LSTM(
+        #     input_size=hidden_size,
+        #     hidden_size=hidden_size,
+        #     num_layers=self.hyperparameters['num_layers'],
+        #     dropout=self.hyperparameters['dropout_drop_proba'])
+        self._out = nn.Linear(hidden_size, output_size)
+
+        self.init_parameters()
+
+    def init_parameters(self):
+        for param in self.parameters():
+            if param.dim() >= 2:
+                nn.init.xavier_uniform_(param)
 
     def forward(self, input, state=None):
-        return self.larnn(input, state)
+        hidden = self._in(input)  # Change number of features with a linear
+        hidden, state = self._larnn(hidden, state)  # Deep LARNNing a lot here
+        output = hidden[-1]  # Keep only last item of time series sequence axis
+        output = self._out(output)  # Reshape with a linear for categories
+        return output, state  # Returned state could be used for Truncated BPTT
 
 
 if __name__ == "__main__":
-    """Take the best hyperparameters and train on them."""
+    """Take the best hyperparameters and re-train on them."""
 
     dataset_name = 'UCIHAR'
     space_best_model = load_best_hyperspace(dataset_name)

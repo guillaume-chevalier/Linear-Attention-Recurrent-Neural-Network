@@ -1,6 +1,9 @@
 # python3
-networkx==1.11
 torch==0.4.0
+networkx==1.11
 hyperopt==0.1
+matplotlib==2.2.2
+sklearn
 pandas
 scipy
+

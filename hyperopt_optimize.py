@@ -9,6 +9,7 @@ import traceback
 from hyperopt import tpe, fmin, Trials
 
 from train import get_optimizer, Model
+from json_utils import RESULTS_DIR
 
 
 __author__ = "Guillaume Chevalier"
@@ -44,15 +45,15 @@ parser.add_argument(
 args = parser.parse_args()
 
 
-def run_a_trial():
+def run_a_trial(args):
     """Run one TPE meta optimisation step and save its results."""
+    results_pickle_file = os.path.join(RESULTS_DIR, "{}.pkl".format(args.dataset))
+
     max_evals = nb_evals = 1
-
     print("Attempt to resume a past training if it exists:")
-
     try:
         # https://github.com/hyperopt/hyperopt/issues/267
-        trials = pickle.load(open("results.pkl", "rb"))
+        trials = pickle.load(open(results_pickle_file, "rb"))
         print("Found saved Trials! Loading...")
         max_evals = len(trials.trials) + nb_evals
         print("Rerunning from {} trials to add another one.".format(
@@ -68,7 +69,7 @@ def run_a_trial():
         trials=trials,
         max_evals=max_evals
     )
-    pickle.dump(trials, open("results.pkl", "wb"))
+    pickle.dump(trials, open(results_pickle_file, "wb"))
 
     print("\nOPTIMIZATION STEP COMPLETE.\n")
 
@@ -90,7 +91,7 @@ if __name__ == "__main__":
     while True:
         print("OPTIMIZING NEW MODEL:")
         try:
-            run_a_trial()
+            run_a_trial(args)
         except Exception as err:
             err_str = str(err)
             print(err_str)
