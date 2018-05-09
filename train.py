@@ -289,6 +289,13 @@ class Model(nn.Module):
         #     dropout=self.hyperparameters['dropout_drop_proba'])
         self._out = nn.Linear(hidden_size, output_size)
 
+        self.init_parameters()
+
+    def init_parameters(self):
+        for param in self.parameters():
+            if param.dim() >= 2:
+                nn.init.xavier_uniform_(param)
+
     def forward(self, input, state=None):
         hidden = self._in(input)  # Change number of features with a linear
         hidden, state = self._larnn(hidden, state)  # Deep LARNNing a lot here

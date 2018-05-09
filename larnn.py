@@ -9,7 +9,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from multi_head_attention import MultiHeadedAttention
+from multi_head_attention import MultiHeadedAttention, PositionalEncoding
 
 
 __author__ = "Guillaume Chevalier"
@@ -56,6 +56,13 @@ class LARNN(nn.Module):
         self.num_layers = num_layers
         self.is_stacked_residual = is_stacked_residual
 
+        self.init_parameters()
+
+    def init_parameters(self):
+        for param in self.parameters():
+            if param.dim() >= 2:
+                nn.init.xavier_uniform_(param)
+
     def forward(self, input, state=None):
         if state is None:
             # If not using Truncated BPTT, init a new inner cell every time:
@@ -63,7 +70,8 @@ class LARNN(nn.Module):
             state = self.num_layers * [LARNNCellState(
                 batch_size,
                 self.hidden_size,
-                self.larnn_window_size)]
+                self.larnn_window_size,
+                self.use_positional_encoding)]
 
         # Stacking the layers:
         new_state = []
@@ -92,16 +100,23 @@ class LARNN(nn.Module):
 
 
 class LARNNCellState(nn.Module):
-    def __init__(self, batch_size, hidden_size, larnn_window_size):
+    def __init__(self, batch_size, hidden_size, larnn_window_size, use_positional_encoding):
+        super().__init__()
         self.batch_size = batch_size
         self.hidden_size = hidden_size
         self.larnn_window_size = larnn_window_size
+        self.use_positional_encoding = use_positional_encoding
 
         self.states = deque()
         self.states.append((
             torch.zeros([1, batch_size, hidden_size]),  # hidden (gated output)
             torch.zeros([1, batch_size, hidden_size])  # memory cell (inner)
         ))
+
+        if use_positional_encoding:
+            # Positional Encoding in the state, used in `.get_past_cells_for_attention()`
+            self.positional_encoding = PositionalEncoding(
+                batch_size=batch_size, max_sequence_length=larnn_window_size)
 
     def update_most_recent_state(self, new_state):
         self.states.append(new_state)
@@ -112,17 +127,20 @@ class LARNNCellState(nn.Module):
     def get_most_recent_cell(self):
         return self.states[-1]
 
-    def get_past_cells_for_attention(self, use_positional_encoding=False):
+    def get_past_cells_for_attention(self):
         # Get the past states' inner cells
         past_cells = [state[1] for state in self.states]
 
         # Make that 1 tensor, not a list
-        attention_values_tensor = torch.cat(past_cells, 0)
+        attention_values_tensor = torch.cat(past_cells, 0)  # size [sequence_length, batch_size, hidden_size]
 
-        # TODO: use_positional_encoding
-
-        # IDEA: dropout on attention_tensor maybe?
-        return attention_values_tensor
+        if self.use_positional_encoding:
+            # Append positional_encoding to features (inner axis)
+            cells_with_positional_encoding = self.positional_encoding(
+                attention_values_tensor.transpose(0, 1)).transpose(0, 1)
+            return cells_with_positional_encoding  # returned shape: [sequence_length, batch_size, hidden_size]
+        else:
+            return attention_values_tensor
 
 
 class LARNNCell(nn.Module):
@@ -163,11 +181,12 @@ class LARNNCell(nn.Module):
 
         self.input_to_hidden = nn.Linear(input_size, 4 * hidden_size, bias=True)
         self.hidden_to_hidden = nn.Linear(hidden_size, 4 * hidden_size, bias=False)
-        self.reset_params()
         self.batch_norm_pre_activation = torch.nn.BatchNorm1d(4 * hidden_size)
         self.batch_norm_post_activation = torch.nn.BatchNorm1d(hidden_size)
 
         self.input_and_hidden_to_query = nn.Linear(input_size + hidden_size, hidden_size, bias=True)
+
+        nb_positional_features = int(use_positional_encoding) * PositionalEncoding.get_features_dimensionnality(larnn_window_size)
         if larnn_mode == 'residual':
             # Attention will be added to Wx and Wh as `Wx*x + Wh*h + Wa*a + bias1`.
             self.attention_to_cell = nn.Linear(hidden_size, 4 * hidden_size, bias=True)
@@ -175,12 +194,19 @@ class LARNNCell(nn.Module):
             # Attention will be post-processed like `Wa*(concat(x, h, a)) + bias2`
             self.attention_to_cell = nn.Linear(3 * hidden_size, 4 * hidden_size, bias=True)
 
-        self.multi_headed_attention = MultiHeadedAttention(attention_heads, hidden_size)
+        self.multi_headed_attention = MultiHeadedAttention(attention_heads, hidden_size + nb_positional_features, hidden_size)
 
-    def reset_params(self):
-        std = 1.0 / math.sqrt(self.hidden_size)
-        for w in self.parameters():
-            w.data.uniform_(-std, std)
+        self.init_parameters()
+
+    def init_parameters(self, style="xavier_uniform"):
+        if style == "xavier_uniform":
+            for param in self.parameters():
+                if param.dim() >= 2:
+                    nn.init.xavier_uniform_(param)
+        elif style == "pytorch_default":
+            std = 1.0 / math.sqrt(self.hidden_size)
+            for param in self.parameters():
+                param.data.uniform_(-std, std)
 
     def forward(self, input, state):
         # Unpack arguments:
@@ -216,8 +242,7 @@ class LARNNCell(nn.Module):
         return hidden, state
 
     def linear_attention(self, x, h, state):
-        prev_cells = state.get_past_cells_for_attention(
-            use_positional_encoding=self.use_positional_encoding)  # shape (larnn_window_size, batch_size, hidden_size)
+        prev_cells = state.get_past_cells_for_attention()  # shape (larnn_window_size, batch_size, hidden_size)
 
         # `V = K = Wk*(a "larnn_window_size" number of most recent cells)`
         values = V = K = prev_cells  # shape (larnn_window_size, batch_size, hidden_size)
