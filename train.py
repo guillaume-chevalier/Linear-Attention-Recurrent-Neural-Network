@@ -156,8 +156,8 @@ def train(hyperparameters, dataset, evaluation_metric, device):
         for test_step, (start, end) in enumerate(
                 zip(range(0, nb_test_examples, hyperparameters['batch_size']),
                     range(hyperparameters['batch_size'], nb_examples + 1, hyperparameters['batch_size']))):
-            inputs = Variable(torch.from_numpy(dataset.X_test[start:end]).float().transpose(1, 0)).to(device)
-            targets = Variable(torch.from_numpy(dataset.Y_test[start:end]).long()).to(device)
+            inputs = Variable(torch.from_numpy(dataset.X_test[start:end]).float().transpose(1, 0), volatile=True).to(device)
+            targets = Variable(torch.from_numpy(dataset.Y_test[start:end]).long(), volatile=True).to(device)
             outputs, _ = model(inputs, state=None)
             loss = criterion(outputs, targets)
             all_outputs.append(outputs.to("cpu"))
@@ -261,7 +261,7 @@ class Model(nn.Module):
         # L2 weight decay:
         'l2_weight_reg': 0.0005 * hp.loguniform('l2_weight_reg_mult', -1.3, 1.3),
         # Number of loops on the whole train dataset
-        'training_epochs': 50,
+        'training_epochs': 25,
         # Number of examples fed per training step
         'batch_size': 64,
 
