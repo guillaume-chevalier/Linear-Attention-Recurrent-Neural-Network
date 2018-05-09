@@ -14,7 +14,7 @@ import torch
 from torch import nn
 from torch.autograd import Variable
 
-from json_utils import load_best_hyperspace, save_json_result, print_json
+from json_utils import load_best_hyperparameters, save_json_result, print_json
 from larnn import LARNN
 from datasets import UCIHARDataset, OpportunityDataset
 
@@ -44,11 +44,11 @@ __notice__ = """
 """
 
 
-def optimize_model(hyperparameters, dataset, evaluation_metric):
+def optimize_model(hyperparameters, dataset, evaluation_metric, device):
     """Build a LARNN and train it on given dataset."""
 
     try:
-        model, model_name, result = train(hyperparameters, dataset, evaluation_metric)
+        model, model_name, result = train(hyperparameters, dataset, evaluation_metric, device)
 
         # Save training results to disks with unique filenames
         save_json_result(model_name, dataset.NAME, result)
@@ -77,7 +77,7 @@ def optimize_model(hyperparameters, dataset, evaluation_metric):
     print("\n\n")
 
 
-def train(hyperparameters, dataset, evaluation_metric):
+def train(hyperparameters, dataset, evaluation_metric, device):
     """Build the deep CNN model and train it."""
 
     # Sanitizing integer parameters that shouldn't be float:
@@ -95,7 +95,7 @@ def train(hyperparameters, dataset, evaluation_metric):
     model = Model(
         hyperparameters,
         input_size=dataset.INPUT_FEATURES_SIZE,
-        output_size=dataset.OUTPUT_CLASSES_SIZE)
+        output_size=dataset.OUTPUT_CLASSES_SIZE).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(
         model.parameters(),
@@ -125,8 +125,8 @@ def train(hyperparameters, dataset, evaluation_metric):
             # Train
             model.train()
             optimizer.zero_grad()
-            inputs = Variable(torch.from_numpy(X).float().transpose(1, 0))
-            targets = Variable(torch.from_numpy(Y).long())
+            inputs = Variable(torch.from_numpy(X).float().transpose(1, 0)).to(device)
+            targets = Variable(torch.from_numpy(Y).long()).to(device)
             outputs, _ = model(inputs, state=None)  # Truncated BPTT not used.
             loss = criterion(outputs, targets)
             loss.backward()
@@ -148,8 +148,8 @@ def train(hyperparameters, dataset, evaluation_metric):
 
         # Validation
         model.eval()
-        inputs = Variable(torch.from_numpy(dataset.X_test).float().transpose(1, 0))
-        targets = Variable(torch.from_numpy(dataset.Y_test).long())
+        inputs = Variable(torch.from_numpy(dataset.X_test).float().transpose(1, 0)).to(device)
+        targets = Variable(torch.from_numpy(dataset.Y_test).long()).to(device)
         outputs, _ = model(inputs, state=None)
         loss = criterion(outputs, targets)
         optimizer.zero_grad()
@@ -227,13 +227,13 @@ dataset_name_to_evaluation_metric = {
     'UCIHAR': "accuracies",
     'Opportunity': "f1_scores"}
 
-def get_optimizer(dataset_name):
+def get_optimizer(dataset_name, device):
     _dataset = dataset_name_to_class[dataset_name]()
     _evaluation_metric = dataset_name_to_evaluation_metric[dataset_name]
 
     # Returns a callable for Hyperopt Optimization (for `fmin`):
     return lambda hyperparameters: (
-        optimize_model(hyperparameters, _dataset, _evaluation_metric)
+        optimize_model(hyperparameters, _dataset, _evaluation_metric, device)
     )
 
 
@@ -324,15 +324,24 @@ class Model(nn.Module):
 if __name__ == "__main__":
     """Take the best hyperparameters and re-train on them."""
 
-    dataset_name = 'UCIHAR'
-    space_best_model = load_best_hyperspace(dataset_name)
+    parser = argparse.ArgumentParser(
+        description='Hyperopt meta-optimizer for the LARNN Model on sensors datasets.')
+    parser.add_argument(
+        '--dataset', type=str, default='UCIHAR',
+        help='Which dataset to use ("UCIHAR" or "Opportunity")')
+    parser.add_argument(
+        '--device', type=str, default='cuda',
+        help='Should we use "cuda" or "cpu"?')
+    args = parser.parse_args()
 
-    if space_best_model is None:
+    # Load hyperparameters
+    best_model_hyperparameters = load_best_hyperparameters(args.dataset)
+    if best_model_hyperparameters is None:
         print("You haven't found good hyperparameters yet. Run `hyperopt_optimize.py` first.")
         sys.exit(1)
 
     # Train the model.
-    model, model_name, result = optimize_model(dataset_name)(space_best_model)
+    model, model_name, result = optimize_model(args.dataset, args.device)(best_model_hyperparameters)
 
     # Prints training results to disks with unique filenames
     print("Model Name:", model_name)
