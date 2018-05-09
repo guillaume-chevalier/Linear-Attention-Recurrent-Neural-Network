@@ -109,7 +109,7 @@ class PositionalEncoding(nn.Module):
     #     MIT License, Copyright (c) 2018 Guillaume Chevalier
     "Implement the edited PE function, depends on sequence length rather than input dimensionnality."
 
-    def __init__(self, batch_size, max_sequence_length, dropout=0.1):
+    def __init__(self, batch_size, max_sequence_length, device, dropout=0.1):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
 
@@ -124,12 +124,13 @@ class PositionalEncoding(nn.Module):
         # print("x.shape():", x.shape)
 
         # Register it into PyTorch
-        pe = torch.from_numpy(x).float()
+        pe = torch.from_numpy(x).float().to(device)
         pe = pe.transpose(-1, -2)
         # print("pe.size():", pe.size())
         self.register_buffer('pe', pe)
 
         self.positional_features = pe.size(-1)
+        self.to(device)
 
     @staticmethod
     def get_features_dimensionnality(max_sequence_length):

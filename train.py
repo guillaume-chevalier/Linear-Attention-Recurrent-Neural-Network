@@ -44,7 +44,7 @@ __notice__ = """
 """
 
 
-def optimize_model(hyperparameters, dataset, evaluation_metric, device):
+def optimize_model(hyperparameters, dataset, evaluation_metric, device="cuda"):
     """Build a LARNN and train it on given dataset."""
 
     try:
@@ -95,7 +95,8 @@ def train(hyperparameters, dataset, evaluation_metric, device):
     model = Model(
         hyperparameters,
         input_size=dataset.INPUT_FEATURES_SIZE,
-        output_size=dataset.OUTPUT_CLASSES_SIZE).to(device)
+        output_size=dataset.OUTPUT_CLASSES_SIZE,
+        device=device)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(
         model.parameters(),
@@ -282,7 +283,7 @@ class Model(nn.Module):
         'is_stacked_residual': hp.choice('is_stacked_residual', [False, True])
     }
 
-    def __init__(self, hyperparameters, input_size, output_size):
+    def __init__(self, hyperparameters, input_size, output_size, device):
         super().__init__()
         self.hyperparameters = hyperparameters
 
@@ -295,8 +296,9 @@ class Model(nn.Module):
             num_layers=self.hyperparameters['num_layers'],
             larnn_window_size=self.hyperparameters['larnn_window_size'],
             larnn_mode=self.hyperparameters['larnn_mode'],
-            use_positional_encoding=self.hyperparameters['use_positional_encoding'],
             is_stacked_residual=self.hyperparameters['is_stacked_residual'],
+            use_positional_encoding=self.hyperparameters['use_positional_encoding'],
+            device=device,
             dropout=self.hyperparameters['dropout_drop_proba']
         )
         # self._larnn = nn.LSTM(
@@ -307,6 +309,7 @@ class Model(nn.Module):
         self._out = nn.Linear(hidden_size, output_size)
 
         self.init_parameters()
+        self.to(device)
 
     def init_parameters(self):
         for param in self.parameters():

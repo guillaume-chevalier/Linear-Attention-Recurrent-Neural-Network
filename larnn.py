@@ -19,7 +19,7 @@ __copyright__ = "Copyright 2018, Guillaume Chevalier"
 
 class LARNN(nn.Module):
     def __init__(self, input_size, hidden_size, attention_heads, num_layers, larnn_window_size,
-                 larnn_mode='residual', use_positional_encoding=True, is_stacked_residual=False, dropout=0.0):
+                 larnn_mode='residual', use_positional_encoding=True, is_stacked_residual=False, device="cuda", dropout=0.0):
         """A LARNN which can contain stacked LARNN Cells, similar to an LSTM.
 
         Args:
@@ -36,6 +36,7 @@ class LARNN(nn.Module):
             is_stacked_residual: wheter or not the stacked LARNN layers are
                 added to the value of the first LARNN layer (and using a final
                 batch norm), for `num_layers` times
+            device: string conaining "cuda" or "cpu".
             dropout: how much dropout is applied on the output of the cell
         """
         super().__init__()
@@ -46,6 +47,7 @@ class LARNN(nn.Module):
         self.larnn_window_size = larnn_window_size
         self.larnn_mode = larnn_mode
         self.use_positional_encoding = use_positional_encoding
+        self.device = device
         self.dropout = dropout
 
         self.larnn_cells = [
@@ -57,6 +59,7 @@ class LARNN(nn.Module):
         self.is_stacked_residual = is_stacked_residual
 
         self.init_parameters()
+        self.to(device)
 
     def init_parameters(self):
         for param in self.parameters():
@@ -71,7 +74,8 @@ class LARNN(nn.Module):
                 batch_size,
                 self.hidden_size,
                 self.larnn_window_size,
-                self.use_positional_encoding)]
+                self.use_positional_encoding,
+                self.device)]
 
         # Stacking the layers:
         new_state = []
@@ -100,7 +104,7 @@ class LARNN(nn.Module):
 
 
 class LARNNCellState(nn.Module):
-    def __init__(self, batch_size, hidden_size, larnn_window_size, use_positional_encoding):
+    def __init__(self, batch_size, hidden_size, larnn_window_size, use_positional_encoding, device):
         super().__init__()
         self.batch_size = batch_size
         self.hidden_size = hidden_size
@@ -116,7 +120,8 @@ class LARNNCellState(nn.Module):
         if use_positional_encoding:
             # Positional Encoding in the state, used in `.get_past_cells_for_attention()`
             self.positional_encoding = PositionalEncoding(
-                batch_size=batch_size, max_sequence_length=larnn_window_size)
+                batch_size=batch_size, max_sequence_length=larnn_window_size, device=device)
+        self.to(device)
 
     def update_most_recent_state(self, new_state):
         self.states.append(new_state)
