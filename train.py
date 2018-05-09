@@ -83,6 +83,7 @@ def train(hyperparameters, dataset, evaluation_metric):
     # Sanitizing integer parameters that shouldn't be float:
     hyperparameters['attention_heads'] = int(hyperparameters['attention_heads'])
     hyperparameters['larnn_window_size'] = int(hyperparameters['larnn_window_size'])
+    hyperparameters['decay_each_N_epoch'] = int(hyperparameters['decay_each_N_epoch'])
 
     # hidden_size must be divisible by attention_heads
     hyperparameters['hidden_size'] = int(round(hyperparameters['hidden_size'] / hyperparameters['attention_heads'])) * hyperparameters['attention_heads']
@@ -111,7 +112,8 @@ def train(hyperparameters, dataset, evaluation_metric):
 
     # Train on shuffled examples in batch for each epoch
     for epoch in range(hyperparameters['training_epochs']):
-        print("Training epoch {}:".format(epoch))
+        current_lr = adjust_lr(optimizer, hyperparameters['learning_rate'], epoch, hyperparameters['decay_each_N_epoch'])
+        print("Training epoch {}, lr={}:".format(epoch, current_lr))
         shuffled_X, shuffled_Y = shuffle(dataset.X_train, dataset.Y_train, random_state=epoch*42)
         nb_examples = dataset.X_train.shape[0]
         for step, (start, end) in enumerate(
@@ -142,7 +144,7 @@ def train(hyperparameters, dataset, evaluation_metric):
                 print("    Training step {}: accuracy={}, f1={}, loss={}".format(
                     step, train_accuracies[-1], train_f1_scores[-1], train_losses[-1]))
 
-                break  # TODO: remove for full training.
+                # break  # TODO: remove for full training.
 
         # Validation
         model.eval()
@@ -163,8 +165,8 @@ def train(hyperparameters, dataset, evaluation_metric):
         print("        Validation: accuracy={}, f1={}, loss={}".format(
             validation_accuracies[-1], validation_f1_scores[-1], validation_losses[-1]))
 
-        if epoch > 10:
-            break  # TODO: remove for full training.
+        # if epoch > 0:
+        #     break  # TODO: remove for full training.
 
     # Aggregate data for serialization
     history = {
@@ -203,6 +205,20 @@ def train(hyperparameters, dataset, evaluation_metric):
     print_json(result)
     return model, model_name, result
 
+def adjust_lr(optim, base_lr, epoch, decay_each_N_epoch):
+    if epoch == 0:
+        # Warmum phase!
+        new_lr = base_lr / 5
+    else:
+        # Decay at each `decay_each_N_epoch`
+        new_lr = base_lr * (
+            0.75**(epoch // decay_each_N_epoch))
+
+    new_state_dict = optim.state_dict()
+    for params_group in new_state_dict['param_groups']:
+        params_group['lr'] = new_lr
+    optim.load_state_dict(new_state_dict)
+    return new_lr
 
 dataset_name_to_class = {
     'UCIHAR': UCIHARDataset,
@@ -228,6 +244,8 @@ class Model(nn.Module):
         # it vary exponentially, in a multiplicative fashion rather than in
         # a linear fashion, to handle his exponentialy varying nature:
         'learning_rate': 0.001 * hp.loguniform('learning_rate_mult', -0.5, 0.5),
+        # How many epochs before the learning_rate is multiplied by 0.75
+        'decay_each_N_epoch': hp.quniform('decay_each_N_epoch', 3 - 0.499, 10 + 0.499, 1),
         # L2 weight decay:
         'l2_weight_reg': 0.005 * hp.loguniform('l2_weight_reg_mult', -1.3, 1.3),
         # Number of loops on the whole train dataset
