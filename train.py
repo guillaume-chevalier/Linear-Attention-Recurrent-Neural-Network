@@ -81,6 +81,7 @@ def train(hyperparameters, dataset, evaluation_metric):
     """Build the deep CNN model and train it."""
 
     # Sanitizing integer parameters that shouldn't be float:
+    hyperparameters['attention_heads'] = int(hyperparameters['attention_heads'])
     hyperparameters['larnn_window_size'] = int(hyperparameters['larnn_window_size'])
 
     # hidden_size must be divisible by attention_heads
