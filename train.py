@@ -233,7 +233,7 @@ class Model(nn.Module):
         # Number of loops on the whole train dataset
         'training_epochs': 80,
         # Number of examples fed per training step
-        'batch_size': 64,
+        'batch_size': 128,
 
         ### LSTM/RNN parameters
         # The dropout on the hidden unit on top of each LARNN cells
