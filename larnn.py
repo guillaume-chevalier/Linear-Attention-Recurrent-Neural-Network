@@ -2,6 +2,7 @@
 """PyTorch implementation of the LARNN, by Guillaume Chevalier."""
 
 import math
+import copy
 from collections import deque
 
 import torch
@@ -161,7 +162,7 @@ class LARNNCell(nn.Module):
         self.use_positional_encoding = use_positional_encoding
         self.attention_heads = attention_heads
         self.dropout = dropout
-        assert ((hidden_size / attention_heads) % 1 == 0.0), "'hidden_size' must be divisible by 'attention_heads'."
+        assert hidden_size % attention_heads == 0, "'hidden_size' must be divisible by 'attention_heads'."
 
         self.i2h = nn.Linear(input_size, 4 * hidden_size, bias=True)
         self.h2h = nn.Linear(hidden_size, 4 * hidden_size, bias=False)
@@ -270,6 +271,32 @@ class LARNNCell(nn.Module):
         print("values:", values.size())  # (larnn_window_size, batch_size, hidden_size)
         print("query:", query.size())  # (batch_size, hidden_size)
 
+        # augment query to be :  (1, batch_size, hidden_size)
+        query = query
+        print("query2:", query.size())
+
+        for i in range(self.attention_heads):
+            subvalues = values[..., i*d_k:(i+1)*d_k].unsqueeze(0)  # (batch_size, hidden_size) --> (1, batch_size, d_k)
+            subquery = query[..., i*d_k:(i+1)*d_k]  # (larnn_window_size, batch_size, hidden_size) --> (larnn_window_size, batch_size, d_k)
+
+            # dot prod the query to attention, will result in (larnn_window_size, batch_size, hidden_size) and
+            # then the dot will reduce the sum down to (larnn_window_size, batch_size, 1).
+            qa = torch.dot(query, attention)
+            print("qa:", qa.size())
+
+            # split "hidden_size" dimension to "attention_heads x d_k"
+            qa = qa.view(larnn_window_size, self.state.batch_size, self.attention_heads, self.attention_heads, d_k)
+
+            # multi-head softmax on "larnn_window_size" dimension
+
+            # gate the value vectors with the attention.
+
+        # pack up softmaxes back to (larnn_window_size, batch_size, hidden_size)
+
+        # sum on larnn_window_size such as to get a vector of (1, batch_size, hidden_size)
+
+        # return this.
+
         scores = torch.matmul(query, values.transpose(2, 1)) / math.sqrt(d_k)
         print("scores:", scores.size())  # (larnn_window_size, batch_size, batch_size)
 
@@ -280,6 +307,89 @@ class LARNNCell(nn.Module):
         print("attention_head_result:", attention_head_result.size())  # (larnn_window_size, batch_size, hidden_size)
 
         return attention_head_result
+
+
+def clones(module, N):
+    # This function is adapted from:
+    #     https://github.com/harvardnlp/annotated-transformer
+    #     MIT License, Copyright (c) 2018 Alexander Rush
+    "Produce N identical layers."
+    return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
+
+
+def attention(query, key, value, dropout=None):
+    # This function is adapted from:
+    #     https://github.com/harvardnlp/annotated-transformer
+    #     MIT License, Copyright (c) 2018 Alexander Rush
+    "Compute 'Scaled Dot Product Attention'"
+    # batch_size = 64
+    # key_values_sequence_length = 10
+    # query_sequence_length = 1
+    # hidden_size = 32
+    # attention_heads = 8
+    d_k = query.size(-1)
+    # print("    key 1:", key.size())  # key 1: torch.Size([64, 8, 10, 4])
+    key = key.transpose(-2, -1)
+    # print("    key 2:", key.size())  # key 2: torch.Size([64, 8, 4, 10])
+    # print("    query:", query.size())  # query: torch.Size([64, 8, 1, 4])
+    scores = torch.matmul(query, key) / math.sqrt(d_k)
+    # print("    scores:", scores.size())  # scores: torch.Size([64, 8, 1, 10])
+    p_attn = F.softmax(scores, dim = -1)
+    # print("    p_attn:", p_attn.size())  # p_attn: torch.Size([64, 8, 1, 10])
+    if dropout is not None:
+        p_attn = dropout(p_attn)
+    attention_result = torch.matmul(p_attn, value)
+    # print("    attention_result:", attention_result.size())  # attention_result: torch.Size([64, 8, 1, 4])
+    return attention_result, p_attn
+
+
+class MultiHeadedAttention(nn.Module):
+    # This class is adapted from:
+    #     https://github.com/harvardnlp/annotated-transformer
+    #     MIT License, Copyright (c) 2018 Alexander Rush
+
+    def __init__(self, h, hidden_size, linears=True, dropout=0.1):
+        "Take in model size and number of heads."
+        super(MultiHeadedAttention, self).__init__()
+        assert hidden_size % h == 0
+        # We assume d_v always equals d_k
+        self.d_k = hidden_size // h
+        self.h = h
+        if linears:
+            self.linears = clones(nn.Linear(hidden_size, hidden_size), 4)
+        else:
+            self.linears = [lambda arg: arg] * 4
+        self.attn = None
+        self.dropout = nn.Dropout(p=dropout)
+
+    def forward(self, query, key, value):
+        "Implements Figure 2"
+        # batch_size = 64
+        # key_values_sequence_length = 10
+        # query_sequence_length = 1
+        # hidden_size = 32
+        # attention_heads = 8
+        nbatches = query.size(0)
+
+        # 1) Do all the linear projections in batch from hidden_size => h x d_k
+        # print("query, key, value 1:", query.size(), key.size(), value.size())  # query, key, value 1: torch.Size([64, 1, 32]) torch.Size([64, 10, 32]) torch.Size([64, 10, 32])
+        query, key, value = \
+            [l(x).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
+             for l, x in zip(self.linears, (query, key, value))]
+        # print("query, key, value 2:", query.size(), key.size(), value.size())  # query, key, value 2: torch.Size([64, 8, 1, 4]) torch.Size([64, 8, 10, 4]) torch.Size([64, 8, 10, 4])
+
+        # 2) Apply attention on all the projected vectors in batch.
+        x, self.attn = attention(query, key, value, self.dropout)
+        # print("x 1:", x.size())  # x 1: torch.Size([64, 8, 1, 4])
+
+        # 3) "Concat" using a view and apply a final linear.
+        x = x.transpose(1, 2).contiguous() \
+             .view(nbatches, -1, self.h * self.d_k)
+        # print("x 2:", x.size())  # x 2: torch.Size([64, 1, 32])
+
+        x = self.linears[-1](x)
+        # print("x 3:", x.size())  # x 3: torch.Size([64, 1, 32])
+        return x
 
 
 if __name__ == '__main__':
