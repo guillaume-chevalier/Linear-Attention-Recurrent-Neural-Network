@@ -12,6 +12,7 @@ from sklearn import metrics
 from sklearn.utils import shuffle
 import torch
 from torch import nn
+import torch.nn.functional as F
 from torch.autograd import Variable
 
 from json_utils import load_best_hyperparameters, save_json_result, print_json
@@ -138,13 +139,13 @@ def train(hyperparameters, dataset, evaluation_metric, device):
 
             # Train metrics
             train_accuracies.append(metrics.accuracy_score(
-                Y, outputs.argmax(-1).data.numpy()))
+                Y, outputs.argmax(-1).cpu().data.numpy()))
             train_f1_scores.append(metrics.f1_score(
-                Y, outputs.argmax(-1).data.numpy(), average="weighted"))
-            train_losses.append(loss.data.item())
+                Y, outputs.argmax(-1).cpu().data.numpy(), average="weighted"))
+            train_losses.append(loss.cpu().data.item())
 
             # Print occasionnaly
-            if step % 3 == 0 and step !=0:
+            if step % 5 == 0 and step !=0:
                 print("    Training step {}: accuracy={}, f1={}, loss={}".format(
                     step, train_accuracies[-1], train_f1_scores[-1], train_losses[-1]))
 
@@ -164,16 +165,16 @@ def train(hyperparameters, dataset, evaluation_metric, device):
                 targets = Variable(torch.from_numpy(dataset.Y_test[start:end]).long()).to(device)
                 outputs, _ = model(inputs, state=None)
                 loss = criterion(outputs, targets)
-                all_outputs.append(outputs.to("cpu"))
-                all_losses.append(loss.to("cpu"))
-            all_outputs = torch.cat(all_outputs, dim=0)
-            all_losses = np.mean([l.data.item() for l in all_losses])
+                all_outputs.append(outputs.argmax(-1).cpu().data.numpy())
+                all_losses.append(loss.cpu().data.item())
+            all_outputs = np.concatenate(all_outputs, axis=0)
+            all_losses = float(np.mean(all_losses))
 
             # Validation metrics
             validation_accuracies.append(metrics.accuracy_score(
-                dataset.Y_test, all_outputs.argmax(-1).data.numpy()))
+                dataset.Y_test, all_outputs))
             validation_f1_scores.append(metrics.f1_score(
-                dataset.Y_test, all_outputs.argmax(-1).data.numpy(), average="weighted"))
+                dataset.Y_test, all_outputs, average="weighted"))
             validation_losses.append(all_losses)
 
             # Print
@@ -291,6 +292,8 @@ class Model(nn.Module):
         ]),
         # Wheter or not to use Positional Encoding similar to the one used in https://arxiv.org/abs/1706.03762
         'use_positional_encoding': hp.choice('use_positional_encoding', [False, True]),
+        # Wheter or not to use BN(ELU(.)) in the Linear() layers of the keys and values in the multi-head attention.
+        'activation_on_keys_and_values': hp.choice('activation_on_keys_and_values', [False, True]),
 
         # Number of layers, either stacked or residualy stacked:
         'num_layers': hp.choice('num_layers', [2, 3]),
@@ -313,6 +316,7 @@ class Model(nn.Module):
             larnn_mode=self.hyperparameters['larnn_mode'],
             is_stacked_residual=self.hyperparameters['is_stacked_residual'],
             use_positional_encoding=self.hyperparameters['use_positional_encoding'],
+            activation_on_keys_and_values=self.hyperparameters['activation_on_keys_and_values'],
             device=device,
             dropout=self.hyperparameters['dropout_drop_proba']
         )
@@ -332,7 +336,7 @@ class Model(nn.Module):
                 nn.init.xavier_uniform_(param)
 
     def forward(self, input, state=None):
-        hidden = self._in(input)  # Change number of features with a linear
+        hidden = F.elu(self._in(input))  # Change number of features with a linear
         hidden, state = self._larnn(hidden, state)  # Deep LARNNing a lot here
         output = hidden[-1]  # Keep only last item of time series sequence axis
         output = self._out(output)  # Reshape with a linear for categories

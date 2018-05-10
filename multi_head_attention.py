@@ -13,8 +13,9 @@ https://github.com/guillaume-chevalier/Linear-Attention-Recurrent-Neural-Network
 #     https://github.com/guillaume-chevalier/Linear-Attention-Recurrent-Neural-Network
 #     MIT License, Copyright (c) 2018 Guillaume Chevalier
 # Here, some things such as Attention Masks were removed.
-# Also, there is no longer an extra linear layer on the query (so now there are
-# only 3 linear clones, not 4).
+# Also, useful debugging prints are made to test the dimensions.
+# The positional encoding is also quite changed (see the annotated jupyter notebook for visualizations).
+# I also added `activation_on_keys_and_values` and removed the Linear() on the query.
 
 
 import copy
@@ -55,18 +56,31 @@ def attention(query, key, value, dropout=None):
 
 class MultiHeadedAttention(nn.Module):
 
-    def __init__(self, h, input_size, hidden_size, dropout=0.1):
+    def __init__(self, h, input_size, hidden_size,
+                 activation_on_keys_and_values, dropout=0.1):
         "Take in model size and number of heads."
         super(MultiHeadedAttention, self).__init__()
         assert hidden_size % h == 0
-        # We assume d_v always equals d_k
         self.d_k = hidden_size // h
         self.h = h
         self.key_linear = nn.Linear(input_size, hidden_size)
         self.value_linear = nn.Linear(input_size, hidden_size)
         self.output_linear = nn.Linear(hidden_size, hidden_size)
+        # keys and values (2) activations
+        self.activation_on_keys_and_values = activation_on_keys_and_values
+        if activation_on_keys_and_values:
+            self.bns = [torch.nn.BatchNorm1d(hidden_size)] * 2
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
+
+    def activation(self, layer, i):
+        # "i = 0" means keys, "i = 1" means values.
+        if self.activation_on_keys_and_values:
+            normal_shape = layer.size()
+            # Take the BN(ELU(layer)): BN is 1d so we need a reshape (view):
+            return self.bns[i](F.elu(layer.view(-1, normal_shape[-1]))).view(normal_shape)
+        else:
+            return layer
 
     def forward(self, query, key, value):
         "Implements Figure 2"
@@ -79,8 +93,8 @@ class MultiHeadedAttention(nn.Module):
 
         # 1) Do all the linear projections in batch from hidden_size => h x d_k
         # print("query, key, value 1:", query.size(), key.size(), value.size())  # query, key, value 1: torch.Size([64, 1, 32]) torch.Size([64, 10, 32]) torch.Size([64, 10, 32])
-        key = self.key_linear(key)
-        value = self.value_linear(value)
+        key = self.activation(self.key_linear(key), 0)
+        value = self.activation(self.value_linear(value), 1)
         query, key, value = [
             x.view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
             for x in (query, key, value)]

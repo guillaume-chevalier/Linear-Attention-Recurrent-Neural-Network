@@ -19,7 +19,8 @@ __copyright__ = "Copyright 2018, Guillaume Chevalier"
 
 class LARNN(nn.Module):
     def __init__(self, input_size, hidden_size, attention_heads, num_layers, larnn_window_size,
-                 larnn_mode='residual', use_positional_encoding=True, is_stacked_residual=False, device="cuda", dropout=0.0):
+                 larnn_mode='residual', use_positional_encoding=True, activation_on_keys_and_values=True,
+                 is_stacked_residual=False, device="cuda", dropout=0.0):
         """A LARNN which can contain stacked LARNN Cells, similar to an LSTM.
 
         Args:
@@ -47,12 +48,13 @@ class LARNN(nn.Module):
         self.larnn_window_size = larnn_window_size
         self.larnn_mode = larnn_mode
         self.use_positional_encoding = use_positional_encoding
+        self.activation_on_keys_and_values = activation_on_keys_and_values
         self.device = device
         self.dropout = dropout
 
         self.larnn_cells = [
             LARNNCell(input_size, hidden_size, attention_heads, larnn_window_size,
-                      larnn_mode, use_positional_encoding, dropout).to(device)
+                      larnn_mode, use_positional_encoding, activation_on_keys_and_values, dropout).to(device)
             for _ in range(num_layers)]
 
         self.num_layers = num_layers
@@ -147,7 +149,8 @@ class LARNNCellState(nn.Module):
 
 class LARNNCell(nn.Module):
     def __init__(self, input_size, hidden_size, attention_heads, larnn_window_size,
-                 larnn_mode='residual', use_positional_encoding=True, dropout=0.0):
+                 larnn_mode='residual', use_positional_encoding=True,
+                 activation_on_keys_and_values=True, dropout=0.0):
         """A LARNN Cell on which it's possible to loop as an LSTM Cell.
 
         Args:
@@ -177,6 +180,7 @@ class LARNNCell(nn.Module):
         self.larnn_window_size = larnn_window_size
         self.larnn_mode = larnn_mode
         self.use_positional_encoding = use_positional_encoding
+        self.activation_on_keys_and_values = activation_on_keys_and_values
         self.attention_heads = attention_heads
         self.dropout = dropout
         assert hidden_size % attention_heads == 0, "'hidden_size' must be divisible by 'attention_heads'."
@@ -185,6 +189,7 @@ class LARNNCell(nn.Module):
         self.hidden_to_hidden = nn.Linear(hidden_size, 4 * hidden_size, bias=False)
         self.batch_norm_pre_activation = torch.nn.BatchNorm1d(4 * hidden_size)
         self.batch_norm_post_activation = torch.nn.BatchNorm1d(hidden_size)
+        self.batch_norm_attention_result = torch.nn.BatchNorm1d(hidden_size)
 
         self.input_and_hidden_to_query = nn.Linear(input_size + hidden_size, hidden_size, bias=True)
 
@@ -196,7 +201,9 @@ class LARNNCell(nn.Module):
             # Attention will be post-processed like `Wa*(concat(x, h, a)) + bias2`
             self.attention_to_cell = nn.Linear(3 * hidden_size, 4 * hidden_size, bias=True)
 
-        self.multi_headed_attention = MultiHeadedAttention(attention_heads, hidden_size + nb_positional_features, hidden_size)
+        self.multi_headed_attention = MultiHeadedAttention(
+            attention_heads, hidden_size + nb_positional_features,
+            hidden_size, activation_on_keys_and_values, dropout=0.1)
 
         self.init_parameters("pytorch_default")
 
@@ -246,13 +253,13 @@ class LARNNCell(nn.Module):
 
         # `Q = Wxh*concat(x, h) + bxh`
         ih = torch.cat([x, h], -1)  # Concat on features
-        query = Q = self.input_and_hidden_to_query(ih)  #   # shape (batch_size, hidden_size)
+        query = Q = F.elu(self.input_and_hidden_to_query(ih))  #   # shape (batch_size, hidden_size)
 
         # `a(K, Q, V) = MultiHeadSoftmax(Q*K'/sqrt(dk))*V` like in Attention Is All You Need (AIAYN).
         query = query.unsqueeze(1)  # wants [batch_size, 1, hidden_size]
         values = values.transpose(0, 1)  # wants [batch_size, larnn_window_size, hidden_size]
-        attention = self.multi_headed_attention(query, values, values)  # attention result is [batch_size, 1, hidden_size]
-        attention = attention.squeeze()  # wants [batch_size, hidden_size]
+        attention = F.elu(self.multi_headed_attention(query, values, values))  # attention result is [batch_size, 1, hidden_size]
+        attention = self.batch_norm_attention_result(attention.squeeze())  # wants [batch_size, hidden_size]
 
         if self.larnn_mode == 'residual':
             # Attention will be added to Wx and Wh as `Wx*x + Wh*h + Wa*a + b`.
