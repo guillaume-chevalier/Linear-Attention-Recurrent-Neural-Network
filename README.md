@@ -18,15 +18,15 @@ cd ..
 ## Meta-optimize the LARNN
 
 ```
-python3 hyperopt_optimize.py --dataset UCIHAR
-python3 hyperopt_optimize.py --dataset Opportunity
+python3 hyperopt_optimize.py --dataset UCIHAR --device cuda
+python3 hyperopt_optimize.py --dataset Opportunity --device cuda
 ```
 
 ## Retrain on best hyperparameters found by meta-optimization
 
 ```
-python3 train.py --dataset UCIHAR
-python3 train.py --dataset Opportunity
+python3 train.py --dataset UCIHAR --device cuda
+python3 train.py --dataset Opportunity --device cuda
 ```
 
 ## Debug/print the dimensions of the LARNN
