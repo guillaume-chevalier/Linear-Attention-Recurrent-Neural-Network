@@ -57,7 +57,7 @@ def attention(query, key, value, dropout=None):
 class MultiHeadedAttention(nn.Module):
 
     def __init__(self, h, input_size, hidden_size,
-                 activation_on_keys_and_values, dropout=0.1):
+                 activation_on_keys_and_values, device="cuda", dropout=0.1):
         "Take in model size and number of heads."
         super(MultiHeadedAttention, self).__init__()
         assert hidden_size % h == 0
@@ -69,7 +69,7 @@ class MultiHeadedAttention(nn.Module):
         # keys and values (2) activations
         self.activation_on_keys_and_values = activation_on_keys_and_values
         if activation_on_keys_and_values:
-            self.bns = [torch.nn.BatchNorm1d(hidden_size)] * 2
+            self.bns = [torch.nn.BatchNorm1d(hidden_size).to(device)] * 2
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
 

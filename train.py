@@ -149,7 +149,7 @@ def train(hyperparameters, dataset, evaluation_metric, device):
                 print("    Training step {}: accuracy={}, f1={}, loss={}".format(
                     step, train_accuracies[-1], train_f1_scores[-1], train_losses[-1]))
 
-                # break  # TODO: remove for full training.
+                break  # TODO: remove for full training.
 
         # Validation/test
         model.eval()
@@ -181,8 +181,8 @@ def train(hyperparameters, dataset, evaluation_metric, device):
             print("        Validation: accuracy={}, f1={}, loss={}".format(
                 validation_accuracies[-1], validation_f1_scores[-1], validation_losses[-1]))
 
-            # if epoch > 0:
-            #     break  # TODO: remove for full training.
+            if epoch > 0:
+                break  # TODO: remove for full training.
 
     # Aggregate data for serialization
     history = {
@@ -203,7 +203,7 @@ def train(hyperparameters, dataset, evaluation_metric, device):
         # Note: 'loss' in Hyperopt means 'score', so we use something else it's not the real loss.
         'loss': -max_score,
         'true_loss': -max_score,
-        'true_loss_variance': np.var(history[full_metric_name][-10:]),  # Note that the "-10" is in epochs count.
+        'true_loss_variance': np.var(history[full_metric_name][-5:]),  # Note that the "-5" is in epochs count.
         'real_best_loss': min(validation_losses),  # This is the only "loss" literally-speaking. Others are hyperopt losses for `fmin` meta-optimization.
         # "Best" metrics throughout training:
         'best_train_accuracy': max(train_accuracies),
@@ -264,11 +264,11 @@ class Model(nn.Module):
         # How many epochs before the learning_rate is multiplied by 0.75
         'decay_each_N_epoch': hp.quniform('decay_each_N_epoch', 3 - 0.499, 10 + 0.499, 1),
         # L2 weight decay:
-        'l2_weight_reg': 0.0005 * hp.loguniform('l2_weight_reg_mult', -1.3, 1.3),
+        'l2_weight_reg': 0.0001 * hp.loguniform('l2_weight_reg_mult', -1.3, 1.3),
         # Number of loops on the whole train dataset
         'training_epochs': 25,
         # Number of examples fed per training step
-        'batch_size': 64,
+        'batch_size': 256,
 
         ### LSTM/RNN parameters
         # The dropout on the hidden unit on top of each LARNN cells
@@ -280,7 +280,7 @@ class Model(nn.Module):
 
         ### LARNN (Linear Attention RNN) parameters
         # How restricted is the attention back in time steps (across sequence)
-        'larnn_window_size': hp.uniform('larnn_window_size', 1, 50),
+        'larnn_window_size': hp.uniform('larnn_window_size', 10, 50),
         # How the new attention is placed in the LSTM
         'larnn_mode': hp.choice('larnn_mode', [
             'residual',  # Attention will be added to Wx and Wh as `Wx*x + Wh*h + Wa*a + b`.
