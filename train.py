@@ -149,7 +149,7 @@ def train(hyperparameters, dataset, evaluation_metric, device):
                 print("    Training step {}: accuracy={}, f1={}, loss={}".format(
                     step, train_accuracies[-1], train_f1_scores[-1], train_losses[-1]))
 
-                break  # TODO: remove for full training.
+                # break  # TODO: remove for full training.
 
         # Validation/test
         model.eval()
@@ -181,8 +181,8 @@ def train(hyperparameters, dataset, evaluation_metric, device):
             print("        Validation: accuracy={}, f1={}, loss={}".format(
                 validation_accuracies[-1], validation_f1_scores[-1], validation_losses[-1]))
 
-            if epoch > 0:
-                break  # TODO: remove for full training.
+            # if epoch > 0:
+            #     break  # TODO: remove for full training.
 
     # Aggregate data for serialization
     history = {
