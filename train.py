@@ -47,6 +47,9 @@ __notice__ = """
 def optimize_model(hyperparameters, dataset, evaluation_metric, device="cuda"):
     """Build a LARNN and train it on given dataset."""
 
+    if device == "cuda":
+        torch.backends.cudnn.benchmark = True
+
     try:
         model, model_name, result = train(hyperparameters, dataset, evaluation_metric, device)
 
