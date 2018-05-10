@@ -99,7 +99,7 @@ class LARNN(nn.Module):
             x = input[i]
             o, state = cell(x, state)
             outputs.append(o)
-        output_tensor = torch.cat(outputs, 0)
+        output_tensor = torch.stack(outputs)
         return output_tensor, state
 
 
@@ -113,8 +113,8 @@ class LARNNCellState(nn.Module):
 
         self.states = deque()
         self.states.append((
-            torch.zeros([1, batch_size, hidden_size]).to(device),  # hidden (gated output)
-            torch.zeros([1, batch_size, hidden_size]).to(device)  # memory cell (inner)
+            torch.zeros([batch_size, hidden_size]).to(device),  # hidden (gated output)
+            torch.zeros([batch_size, hidden_size]).to(device)  # memory cell (inner)
         ))
 
         if use_positional_encoding:
@@ -134,18 +134,15 @@ class LARNNCellState(nn.Module):
 
     def get_past_cells_for_attention(self):
         # Get the past states' inner cells
-        past_cells = [state[1] for state in self.states]
-
-        # Make that 1 tensor, not a list
-        attention_values_tensor = torch.cat(past_cells, 0)  # size [sequence_length, batch_size, hidden_size]
+        past_cells = torch.stack([state[1] for state in self.states])  # size [sequence_length, batch_size, hidden_size]
 
         if self.use_positional_encoding:
             # Append positional_encoding to features (inner axis)
             cells_with_positional_encoding = self.positional_encoding(
-                attention_values_tensor.transpose(0, 1)).transpose(0, 1)
+                past_cells.transpose(0, 1)).transpose(0, 1)
             return cells_with_positional_encoding  # returned shape: [sequence_length, batch_size, hidden_size]
         else:
-            return attention_values_tensor
+            return past_cells  # returned shape: [sequence_length, batch_size, hidden_size]
 
 
 class LARNNCell(nn.Module):
@@ -201,7 +198,7 @@ class LARNNCell(nn.Module):
 
         self.multi_headed_attention = MultiHeadedAttention(attention_heads, hidden_size + nb_positional_features, hidden_size)
 
-        self.init_parameters()
+        self.init_parameters("pytorch_default")
 
     def init_parameters(self, style="xavier_uniform"):
         if style == "xavier_uniform":
@@ -209,17 +206,14 @@ class LARNNCell(nn.Module):
                 if param.dim() >= 2:
                     nn.init.xavier_uniform_(param)
         elif style == "pytorch_default":
-            std = 1.0 / math.sqrt(self.hidden_size)
+            invsqrt = 1.0 / math.sqrt(self.hidden_size)
             for param in self.parameters():
-                param.data.uniform_(-std, std)
+                param.data.uniform_(-invsqrt, invsqrt)
 
     def forward(self, input, state):
         # Unpack arguments:
         previous_state = state.get_most_recent_cell()
         prev_hidden, prev_cell = previous_state
-        prev_hidden = prev_hidden.view(prev_hidden.size(1), -1)
-        prev_cell = prev_cell.view(prev_cell.size(1), -1)
-        input = input.view(input.size(0), -1)
 
         # LARNN's Linear Attention:
         pre_activation = self.linear_attention(input, prev_hidden, state)
@@ -239,8 +233,6 @@ class LARNNCell(nn.Module):
         # Bundle for output:
         if self.training and self.dropout > 0.0:
             F.dropout(hidden, p=self.dropout, training=self.training, inplace=True)
-        hidden = hidden.view(1, hidden.size(0), -1)
-        cell = cell.view(1, cell.size(0), -1)
         current_state = (hidden, cell)
         state.update_most_recent_state(current_state)
 
