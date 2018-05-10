@@ -135,9 +135,9 @@ def train(hyperparameters, dataset, evaluation_metric, device):
 
             # Train metrics
             train_accuracies.append(metrics.accuracy_score(
-                Y, outputs.argmax(-1)))
+                Y, outputs.argmax(-1).data.numpy()))
             train_f1_scores.append(metrics.f1_score(
-                Y, outputs.argmax(-1), average="weighted"))
+                Y, outputs.argmax(-1).data.numpy(), average="weighted"))
             train_losses.append(loss.data.item())
 
             # Print occasionnaly
@@ -168,9 +168,9 @@ def train(hyperparameters, dataset, evaluation_metric, device):
 
             # Validation metrics
             validation_accuracies.append(metrics.accuracy_score(
-                dataset.Y_test, all_outputs.argmax(-1)))
+                dataset.Y_test, all_outputs.argmax(-1).data.numpy()))
             validation_f1_scores.append(metrics.f1_score(
-                dataset.Y_test, all_outputs.argmax(-1), average="weighted"))
+                dataset.Y_test, all_outputs.argmax(-1).data.numpy(), average="weighted"))
             validation_losses.append(all_losses)
 
             # Print
