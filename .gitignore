@@ -1,4 +1,4 @@
-# Byte-compiled / optimized / DLL files
+# Byte-compiled / optimized / DLL fileS
 __pycache__/
 *.py[cod]
 *$py.class
@@ -102,5 +102,5 @@ ENV/
 
 # Custom
 ___*
-results*
+#results*
 

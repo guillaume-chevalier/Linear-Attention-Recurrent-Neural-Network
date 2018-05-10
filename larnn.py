@@ -54,7 +54,7 @@ class LARNN(nn.Module):
 
         self.larnn_cells = [
             LARNNCell(input_size, hidden_size, attention_heads, larnn_window_size,
-                      larnn_mode, use_positional_encoding, activation_on_keys_and_values, dropout).to(device)
+                      larnn_mode, use_positional_encoding, activation_on_keys_and_values, device, dropout)
             for _ in range(num_layers)]
 
         self.num_layers = num_layers
@@ -150,7 +150,7 @@ class LARNNCellState(nn.Module):
 class LARNNCell(nn.Module):
     def __init__(self, input_size, hidden_size, attention_heads, larnn_window_size,
                  larnn_mode='residual', use_positional_encoding=True,
-                 activation_on_keys_and_values=True, dropout=0.0):
+                 activation_on_keys_and_values=True, device="cuda", dropout=0.0):
         """A LARNN Cell on which it's possible to loop as an LSTM Cell.
 
         Args:
@@ -189,6 +189,7 @@ class LARNNCell(nn.Module):
         self.hidden_to_hidden = nn.Linear(hidden_size, 4 * hidden_size, bias=False)
         self.batch_norm_pre_activation = torch.nn.BatchNorm1d(4 * hidden_size)
         self.batch_norm_post_activation = torch.nn.BatchNorm1d(hidden_size)
+        self.batch_norm_cell = torch.nn.BatchNorm1d(hidden_size)
         self.batch_norm_attention_result = torch.nn.BatchNorm1d(hidden_size)
 
         self.input_and_hidden_to_query = nn.Linear(input_size + hidden_size, hidden_size, bias=True)
@@ -203,9 +204,10 @@ class LARNNCell(nn.Module):
 
         self.multi_headed_attention = MultiHeadedAttention(
             attention_heads, hidden_size + nb_positional_features,
-            hidden_size, activation_on_keys_and_values, dropout=0.1)
+            hidden_size, activation_on_keys_and_values, dropout=0.1).to(device)
 
         self.init_parameters("pytorch_default")
+        self.to(device)
 
     def init_parameters(self, style="xavier_uniform"):
         if style == "xavier_uniform":
@@ -224,7 +226,7 @@ class LARNNCell(nn.Module):
 
         # LARNN's Linear Attention:
         pre_activation = self.linear_attention(input, prev_hidden, state)
-        # replacing the previous line with the following one would be an LSTM not a LARNN:
+        # replacing the previous line with the following one would be a BNLSTM not a LARNN:
         # pre_activation = self.input_to_hidden(input) + self.hidden_to_hidden(prev_hidden)
 
         # Classic LSTM functions:
@@ -232,10 +234,10 @@ class LARNNCell(nn.Module):
         packed_gates = pre_activation[:, self.hidden_size:].sigmoid()
         forget_gate = packed_gates[:, :self.hidden_size]
         input_gate = packed_gates[:, self.hidden_size:2 * self.hidden_size]
-        cell = torch.mul(input_values, input_gate) + torch.mul(prev_cell, forget_gate)
+        cell = self.batch_norm_cell(torch.mul(input_values, input_gate) + torch.mul(prev_cell, forget_gate))
         output_gate = packed_gates[:, -self.hidden_size:]
         hidden = torch.mul(output_gate, F.elu(cell))  # elu instead of tahn
-        hidden = self.batch_norm_post_activation(hidden)  # specially, batch norm here
+        hidden = self.batch_norm_post_activation(hidden)
 
         # Bundle for output:
         if self.training and self.dropout > 0.0:
