@@ -264,7 +264,7 @@ class Model(nn.Module):
         # How many epochs before the learning_rate is multiplied by 0.75
         'decay_each_N_epoch': hp.quniform('decay_each_N_epoch', 3 - 0.499, 10 + 0.499, 1),
         # L2 weight decay:
-        'l2_weight_reg': 0.0001 * hp.loguniform('l2_weight_reg_mult', -1.3, 1.3),
+        'l2_weight_reg': 0.005 * hp.loguniform('l2_weight_reg_mult', -1.3, 1.3),
         # Number of loops on the whole train dataset
         'training_epochs': 25,
         # Number of examples fed per training step
@@ -272,11 +272,11 @@ class Model(nn.Module):
 
         ### LSTM/RNN parameters
         # The dropout on the hidden unit on top of each LARNN cells
-        'dropout_drop_proba': hp.uniform('dropout_drop_proba', 0.1, 0.5),
+        'dropout_drop_proba': hp.uniform('dropout_drop_proba', 0.05, 0.5),
         # Let's multiply the "default" number of hidden units:
-        'hidden_size': 42 * hp.loguniform('hidden_size_mult', -0.6, 0.6),
+        'hidden_size': 64 * hp.loguniform('hidden_size_mult', -0.6, 0.6),
         # The number 'h' of attention heads: from 1 to 20 attention heads.
-        'attention_heads': hp.quniform('attention_heads', 1 - 0.499, 20 + 0.499, 1),
+        'attention_heads': hp.quniform('attention_heads', 6 - 0.499, 36 + 0.499, 1),
 
         ### LARNN (Linear Attention RNN) parameters
         # How restricted is the attention back in time steps (across sequence)
