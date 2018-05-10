@@ -5,17 +5,16 @@ For a walktrough of this code to gain intuition, see:
 https://github.com/guillaume-chevalier/Linear-Attention-Recurrent-Neural-Network/blob/master/AnnotatedMultiHeadAttention.ipynb
 """
 
-# The code in this file is all adapted from:
+# The code in this file is adapted from:
 #     https://github.com/harvardnlp/annotated-transformer
 #     MIT License, Copyright (c) 2018 Alexander Rush
-
 # The edits are sublicensed as:
 #     https://github.com/guillaume-chevalier/Linear-Attention-Recurrent-Neural-Network
 #     MIT License, Copyright (c) 2018 Guillaume Chevalier
 # Here, some things such as Attention Masks were removed.
 # Also, useful debugging prints are made to test the dimensions.
 # The positional encoding is also quite changed (see the annotated jupyter notebook for visualizations).
-# I also added `activation_on_keys_and_values` and removed the Linear() on the query.
+# I also added some BN(ELU(.)) `activation_on_keys_and_values` and removed the Linear() on the query.
 
 
 import copy

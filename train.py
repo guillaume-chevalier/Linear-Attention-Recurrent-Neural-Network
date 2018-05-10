@@ -260,11 +260,11 @@ class Model(nn.Module):
         # This loguniform scale will multiply the learning rate, so as to make
         # it vary exponentially, in a multiplicative fashion rather than in
         # a linear fashion, to handle his exponentialy varying nature:
-        'learning_rate': 0.005 * hp.loguniform('learning_rate_mult', -0.5, 0.5),
+        'learning_rate': 0.006 * hp.loguniform('learning_rate_mult', -0.4, 0.4),
         # How many epochs before the learning_rate is multiplied by 0.75
-        'decay_each_N_epoch': hp.quniform('decay_each_N_epoch', 3 - 0.499, 10 + 0.499, 1),
+        'decay_each_N_epoch': hp.quniform('decay_each_N_epoch', 6 - 0.499, 30 + 0.499, 1),
         # L2 weight decay:
-        'l2_weight_reg': 0.005 * hp.loguniform('l2_weight_reg_mult', -1.3, 1.3),
+        'l2_weight_reg': 0.002 * hp.loguniform('l2_weight_reg_mult', -1.3, 1.3),
         # Number of loops on the whole train dataset
         'training_epochs': 25,
         # Number of examples fed per training step
@@ -274,13 +274,13 @@ class Model(nn.Module):
         # The dropout on the hidden unit on top of each LARNN cells
         'dropout_drop_proba': hp.uniform('dropout_drop_proba', 0.05, 0.5),
         # Let's multiply the "default" number of hidden units:
-        'hidden_size': 64 * hp.loguniform('hidden_size_mult', -0.6, 0.6),
-        # The number 'h' of attention heads: from 1 to 20 attention heads.
-        'attention_heads': hp.quniform('attention_heads', 6 - 0.499, 36 + 0.499, 1),
+        'hidden_size': 68 * hp.loguniform('hidden_size_mult', -0.3, 0.3),
+        # The number 'h' of attention heads:
+        'attention_heads': hp.quniform('attention_heads', 20 - 0.499, 40 + 0.499, 1),
 
         ### LARNN (Linear Attention RNN) parameters
         # How restricted is the attention back in time steps (across sequence)
-        'larnn_window_size': hp.uniform('larnn_window_size', 10, 50),
+        'larnn_window_size': hp.uniform('larnn_window_size', 25, 100),
         # How the new attention is placed in the LSTM
         'larnn_mode': hp.choice('larnn_mode', [
             'residual',  # Attention will be added to Wx and Wh as `Wx*x + Wh*h + Wa*a + b`.
@@ -293,12 +293,12 @@ class Model(nn.Module):
         # Wheter or not to use Positional Encoding similar to the one used in https://arxiv.org/abs/1706.03762
         'use_positional_encoding': hp.choice('use_positional_encoding', [False, True]),
         # Wheter or not to use BN(ELU(.)) in the Linear() layers of the keys and values in the multi-head attention.
-        'activation_on_keys_and_values': hp.choice('activation_on_keys_and_values', [False, True]),
+        'activation_on_keys_and_values': True,
 
         # Number of layers, either stacked or residualy stacked:
-        'num_layers': hp.choice('num_layers', [2, 3]),
+        'num_layers': hp.choice('num_layers', [3, 4]),
         # Use residual connections for the 2nd (stacked) layer?
-        'is_stacked_residual': hp.choice('is_stacked_residual', [False, True])
+        'is_stacked_residual': True
     }
 
     def __init__(self, hyperparameters, input_size, output_size, device):
