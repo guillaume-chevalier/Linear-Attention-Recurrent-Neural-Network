@@ -262,11 +262,11 @@ class Model(nn.Module):
         # a linear fashion, to handle his exponentialy varying nature:
         'learning_rate': 0.006 * hp.loguniform('learning_rate_mult', -0.4, 0.4),
         # How many epochs before the learning_rate is multiplied by 0.75
-        'decay_each_N_epoch': hp.quniform('decay_each_N_epoch', 6 - 0.499, 30 + 0.499, 1),
+        'decay_each_N_epoch': hp.quniform('decay_each_N_epoch', 6 - 0.499, 50 + 0.499, 1),
         # L2 weight decay:
         'l2_weight_reg': 0.002 * hp.loguniform('l2_weight_reg_mult', -1.3, 1.3),
         # Number of loops on the whole train dataset
-        'training_epochs': 25,
+        'training_epochs': 100,
         # Number of examples fed per training step
         'batch_size': 256,
 
@@ -296,7 +296,7 @@ class Model(nn.Module):
         'activation_on_keys_and_values': True,
 
         # Number of layers, either stacked or residualy stacked:
-        'num_layers': hp.choice('num_layers', [3, 4]),
+        'num_layers': 3,
         # Use residual connections for the 2nd (stacked) layer?
         'is_stacked_residual': True
     }
