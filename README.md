@@ -1,4 +1,4 @@
-# LARNN: the Linear Attention Recurrent Neural Network
+# [LARNN: Linear Attention Recurrent Neural Network](https://github.com/guillaume-chevalier/Linear-Attention-Recurrent-Neural-Network)
 
 A fixed-size, go-back-`k` recurrent attention module on an RNN so as to have linear short-term memory by the means of attention. The LARNN model can be easily used inside a loop on the cell state just like any other RNN. The cell state keeps the `k` last states for its multi-head attention mechanism.
 
@@ -6,6 +6,15 @@ The LARNN is derived from the Long Short-Term Memory (LSTM) cell. The LARNN intr
 
 Therefore, multi-head attention with positional encoding is used on the most recent past values of the inner state cell so as to enable a better mid-term memory, such that at each new time steps, the cell looks back at it's own previous cell state values with an attention query.
 
+## The LARNN Cell
+
+Note that the positional encoding is concatenated rather than added. Also, the ELU activation is used in the cell. There is also batch normalization at many places (not drawn). The Multi-Head Attention Mechanism uses an ELU activation rather than unactivated Linears, for the keys and values and the query. There is here only one query rather than many queries.
+
+<p align="center">
+  <img src="inkscape_drawings/png_exported/larnn-cell.png" />
+</p>
+
+Yes, it LARNNs.
 
 ## Downloading the dataset
 
@@ -27,14 +36,14 @@ Two training rounds have been executed and renamed under the folders `./results_
 
 ## Visualize the results
 
-You can visually inspect the effect of every hyperparameter on the accuracy by navigating at:
+You can visually inspect the effect of every hyperparameter on the accuracy, and their correlated effect, by navigating at:
 
-- https://github.com/guillaume-chevalier/Linear-Attention-Recurrent-Neural-Network/blob/master/AnalyzeTestHyperoptResults_round_1.ipynb
-- https://github.com/guillaume-chevalier/Linear-Attention-Recurrent-Neural-Network/blob/master/AnalyzeTestHyperoptResults_round_2.ipynb
+- [Results for round 1](https://github.com/guillaume-chevalier/Linear-Attention-Recurrent-Neural-Network/blob/master/AnalyzeTestHyperoptResults_round_1.ipynb)
+- [Results for round 2](https://github.com/guillaume-chevalier/Linear-Attention-Recurrent-Neural-Network/blob/master/AnalyzeTestHyperoptResults_round_2.ipynb)
 
-You could run one of those files on new results by simply changing the results folder in the `jupyter-notebook` such that your new folder is taken.
+You could also copy and run one of those files on new results by simply changing the results folder in the `jupyter-notebook` such that your new folder is taken.
 
-## Edit the hyperparameters space
+## The hyperparameters space searched with meta-optimization
 
 Here are the hyperparameters and their respective value ranges, which have been explored:
 
@@ -86,7 +95,7 @@ HYPERPARAMETERS_SPACE = {
 }
 ```
 
-The best results were found with those hyperparameters, for a test accuracy of 91.924%:
+The [best results](/results_round_2/UCIHAR/model_0.9192399049881235_b4105.txt.json) were found with those hyperparameters, for a test accuracy of 91.924%:
 
 ```
 {
@@ -107,8 +116,6 @@ The best results were found with those hyperparameters, for a test accuracy of 9
 }
 ```
 
-This can be seen at the end of the file `./results_round_2/UCIHAR/model_0.9192399049881235_b4105.txt.json`.
-
 ## Retrain on best hyperparameters found by meta-optimization
 
 You can re-train on the best hyperparameters found with this command:
@@ -127,6 +134,15 @@ This command is practical if you want to edit the model and potentially print-de
 python3 larnn.py
 ```
 
+## Some thoughts
+
+The LARNN cell obtains better results than the LSTM cell as [explored here](https://github.com/guillaume-chevalier/LSTM-Human-Activity-Recognition).
+
+However, it's yet uncompared to a bidirectional deeply stacked setup such as [done here](https://github.com/guillaume-chevalier/HAR-stacked-residual-bidir-LSTMs), where better results are obtained.
+
+It seems that the positional encoding is not helpful for the learning.
+
+
 ## References
 
 The current project contains code derived from those other projects:
@@ -141,9 +157,11 @@ More information on which pieces of code comes from where in the headers of each
 
 ## License
 
-My project is freely available under the terms of the [MIT License](https://github.com/guillaume-chevalier/Linear-Attention-Recurrent-Neural-Network/blob/master/LICENSE).
+My [project](https://github.com/guillaume-chevalier/Linear-Attention-Recurrent-Neural-Network) is freely available under the terms of the [MIT License](https://github.com/guillaume-chevalier/Linear-Attention-Recurrent-Neural-Network/blob/master/LICENSE).
 
 Copyright (c) 2018 Guillaume Chevalier
+
+*Note: my [drawings](https://github.com/guillaume-chevalier/Linear-Attention-Recurrent-Neural-Network/tree/master/inkscape_drawings) are specially available under the [CC-BY](http://creativecommons.org/licenses/by/4.0/) license rather than under the MIT License.*
 
 ## Connect with me
 
