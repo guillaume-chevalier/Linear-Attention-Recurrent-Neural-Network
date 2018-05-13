@@ -2,8 +2,6 @@
 # Note: this file is derived from:
 #     https://github.com/guillaume-chevalier/HAR-stacked-residual-bidir-LSTMs
 #     (Apache 2.0 License, Copyright 2017, Guillaume Chevalier and Yu Zhao)
-# Which in turns had some derived code from there, regarding loading the Opportunity dataset:
-#     https://github.com/sussexwearlab/DeepConvLSTM/blob/master/DeepConvLSTM.ipynb
 # There is also some code derived from:
 #     https://github.com/guillaume-chevalier/LSTM-Human-Activity-Recognition
 #     (MIT License, Copyright 2017, Guillaume Chevalier)
@@ -13,8 +11,6 @@ import pickle
 import time
 
 import numpy as np
-
-from data.sliding_window import sliding_window
 
 
 class Dataset:
@@ -165,44 +161,7 @@ class OpportunityDataset(Dataset):
         super().__init__(verbose)
 
     def load_train_test(self):
-        # Hardcoded length of the sliding window mechanism employed to segment the data
-        SLIDING_WINDOW_LENGTH = 24
-
-        # Hardcoded step of the sliding window mechanism employed to segment the data
-        SLIDING_WINDOW_STEP_TRAIN_SHORT = int(SEQUENCE_LENGTH/8)
-        SLIDING_WINDOW_STEP = int(SEQUENCE_LENGTH/2)
-
-        print("Loading data...")
-        X_train, Y_train, X_test, Y_test = self.load_dataset('data/oppChallenge_gestures.data')
-
-        assert (INPUT_FEATURES_SIZE == X_train.shape[1])
-
-        def opp_sliding_window(data_x, data_y, ws, ss):
-            data_x = sliding_window(data_x,(ws,data_x.shape[1]),(ss,1))
-            data_y = np.asarray([[i[-1]] for i in sliding_window(data_y,ws,ss)])
-            data_x, data_y = data_x.astype(np.float32), data_y.reshape(len(data_y)).astype(np.uint8)
-            print(" ..after sliding window (testing): inputs {0}, targets {1}".format(X_test.shape, Y_test.shape))
-            return data_x, data_y
-
-        # Sensor data is segmented using a sliding window mechanism.
-        # No BPTT past window size and hidden state is not kept between windows.
-        self.X_test, self.Y_test = opp_sliding_window(X_test, Y_test, SEQUENCE_LENGTH, SLIDING_WINDOW_STEP_TRAIN_SHORT)
-        self.X_train, self.Y_train = opp_sliding_window(X_train, Y_train, SEQUENCE_LENGTH, SLIDING_WINDOW_STEP)
+        raise NotImplementedError()
 
     def load_dataset(self, filename):
-
-        with open(filename, 'rb') as f:
-            data = pickle.load(f)
-
-        X_train, Y_train = data[0]
-        X_test, Y_test = data[1]
-
-        print(" ..from file {}".format(filename))
-        print(" ..reading instances: train {0}, test {1}".format(X_train.shape, X_test.shape))
-
-        X_train = X_train.astype(np.float32)
-        X_test = X_test.astype(np.float32)
-        Y_train = Y_train.astype(np.uint8)
-        Y_test = Y_test.astype(np.uint8)
-
-        return X_train, Y_train, X_test, Y_test
+        raise NotImplementedError()

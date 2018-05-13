@@ -37,14 +37,6 @@ __notice__ = """
 """
 
 
-parser = argparse.ArgumentParser(
-    description='Hyperopt meta-optimizer for the LARNN Model on sensors datasets.')
-parser.add_argument(
-    '--dataset', type=str, default='UCIHAR',
-    help='Which dataset to use ("UCIHAR" or "Opportunity")')
-args = parser.parse_args()
-
-
 def run_a_trial(args):
     """Run one TPE meta optimisation step and save its results."""
     results_pickle_file = os.path.join(RESULTS_DIR, "{}.pkl".format(args.dataset))
@@ -63,7 +55,7 @@ def run_a_trial(args):
         print("Starting from scratch: new trials.")
 
     best = fmin(
-        get_optimizer(args.dataset),
+        get_optimizer(args.dataset, args.device),
         Model.HYPERPARAMETERS_SPACE,
         algo=tpe.suggest,
         trials=trials,
@@ -76,6 +68,16 @@ def run_a_trial(args):
 
 if __name__ == "__main__":
     """Run the optimisation forever (and save results)."""
+
+    parser = argparse.ArgumentParser(
+        description='Hyperopt meta-optimizer for the LARNN Model on sensors datasets.')
+    parser.add_argument(
+        '--dataset', type=str, default='UCIHAR',
+        help='Which dataset to use ("UCIHAR" or "Opportunity")')
+    parser.add_argument(
+        '--device', type=str, default='cuda',
+        help='Should we use "cuda" or "cpu"?')
+    args = parser.parse_args()
 
     print("We will train many models, one after the other. "
           "Note that hyperopt has support for cloud "

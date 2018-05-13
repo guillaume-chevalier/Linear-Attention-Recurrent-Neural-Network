@@ -57,7 +57,7 @@ def load_json_result(best_result_name, dataset_name):
         )
 
 
-def load_best_hyperspace(dataset_name):
+def load_best_hyperparameters(dataset_name):
     results_dir = os.path.join(RESULTS_DIR, dataset_name)
     results = [
         f for f in list(sorted(os.listdir(results_dir))) if 'json' in f

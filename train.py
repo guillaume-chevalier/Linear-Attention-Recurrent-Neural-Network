@@ -12,9 +12,10 @@ from sklearn import metrics
 from sklearn.utils import shuffle
 import torch
 from torch import nn
+import torch.nn.functional as F
 from torch.autograd import Variable
 
-from json_utils import load_best_hyperspace, save_json_result, print_json
+from json_utils import load_best_hyperparameters, save_json_result, print_json
 from larnn import LARNN
 from datasets import UCIHARDataset, OpportunityDataset
 
@@ -44,11 +45,14 @@ __notice__ = """
 """
 
 
-def optimize_model(hyperparameters, dataset, evaluation_metric):
+def optimize_model(hyperparameters, dataset, evaluation_metric, device="cuda"):
     """Build a LARNN and train it on given dataset."""
 
+    if device == "cuda":
+        torch.backends.cudnn.benchmark = True
+
     try:
-        model, model_name, result = train(hyperparameters, dataset, evaluation_metric)
+        model, model_name, result = train(hyperparameters, dataset, evaluation_metric, device)
 
         # Save training results to disks with unique filenames
         save_json_result(model_name, dataset.NAME, result)
@@ -77,11 +81,13 @@ def optimize_model(hyperparameters, dataset, evaluation_metric):
     print("\n\n")
 
 
-def train(hyperparameters, dataset, evaluation_metric):
+def train(hyperparameters, dataset, evaluation_metric, device):
     """Build the deep CNN model and train it."""
 
     # Sanitizing integer parameters that shouldn't be float:
+    hyperparameters['attention_heads'] = int(hyperparameters['attention_heads'])
     hyperparameters['larnn_window_size'] = int(hyperparameters['larnn_window_size'])
+    hyperparameters['decay_each_N_epoch'] = int(hyperparameters['decay_each_N_epoch'])
 
     # hidden_size must be divisible by attention_heads
     hyperparameters['hidden_size'] = int(round(hyperparameters['hidden_size'] / hyperparameters['attention_heads'])) * hyperparameters['attention_heads']
@@ -93,7 +99,8 @@ def train(hyperparameters, dataset, evaluation_metric):
     model = Model(
         hyperparameters,
         input_size=dataset.INPUT_FEATURES_SIZE,
-        output_size=dataset.OUTPUT_CLASSES_SIZE)
+        output_size=dataset.OUTPUT_CLASSES_SIZE,
+        device=device)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(
         model.parameters(),
@@ -110,7 +117,8 @@ def train(hyperparameters, dataset, evaluation_metric):
 
     # Train on shuffled examples in batch for each epoch
     for epoch in range(hyperparameters['training_epochs']):
-        print("Training epoch {}:".format(epoch))
+        current_lr = adjust_lr(optimizer, hyperparameters['learning_rate'], epoch, hyperparameters['decay_each_N_epoch'])
+        print("Training epoch {}, lr={}:".format(epoch, current_lr))
         shuffled_X, shuffled_Y = shuffle(dataset.X_train, dataset.Y_train, random_state=epoch*42)
         nb_examples = dataset.X_train.shape[0]
         for step, (start, end) in enumerate(
@@ -122,8 +130,8 @@ def train(hyperparameters, dataset, evaluation_metric):
             # Train
             model.train()
             optimizer.zero_grad()
-            inputs = Variable(torch.from_numpy(X).float().transpose(1, 0))
-            targets = Variable(torch.from_numpy(Y).long())
+            inputs = Variable(torch.from_numpy(X).float().transpose(1, 0)).to(device)
+            targets = Variable(torch.from_numpy(Y).long()).to(device)
             outputs, _ = model(inputs, state=None)  # Truncated BPTT not used.
             loss = criterion(outputs, targets)
             loss.backward()
@@ -131,39 +139,50 @@ def train(hyperparameters, dataset, evaluation_metric):
 
             # Train metrics
             train_accuracies.append(metrics.accuracy_score(
-                Y, outputs.argmax(-1)))
+                Y, outputs.argmax(-1).cpu().data.numpy()))
             train_f1_scores.append(metrics.f1_score(
-                Y, outputs.argmax(-1), average="weighted"))
-            train_losses.append(loss.data.item())
+                Y, outputs.argmax(-1).cpu().data.numpy(), average="weighted"))
+            train_losses.append(loss.cpu().data.item())
 
             # Print occasionnaly
-            if step % 3 == 0 and step !=0:
+            if step % 5 == 0 and step !=0:
                 print("    Training step {}: accuracy={}, f1={}, loss={}".format(
                     step, train_accuracies[-1], train_f1_scores[-1], train_losses[-1]))
 
-                break  # TODO: remove for full training.
+                # break  # TODO: remove for full training.
 
-        # Validation
+        # Validation/test
         model.eval()
-        inputs = Variable(torch.from_numpy(dataset.X_test).float().transpose(1, 0))
-        targets = Variable(torch.from_numpy(dataset.Y_test).long())
-        outputs, _ = model(inputs, state=None)
-        loss = criterion(outputs, targets)
         optimizer.zero_grad()
+        with torch.no_grad():
+            nb_test_examples = dataset.X_test.shape[0]
+            all_outputs = []
+            all_losses = []
+            for test_step, (start, end) in enumerate(
+                    zip(range(0, nb_test_examples, hyperparameters['batch_size']),
+                        range(hyperparameters['batch_size'], nb_examples + 1, hyperparameters['batch_size']))):
+                inputs = Variable(torch.from_numpy(dataset.X_test[start:end]).float().transpose(1, 0)).to(device)
+                targets = Variable(torch.from_numpy(dataset.Y_test[start:end]).long()).to(device)
+                outputs, _ = model(inputs, state=None)
+                loss = criterion(outputs, targets)
+                all_outputs.append(outputs.argmax(-1).cpu().data.numpy())
+                all_losses.append(loss.cpu().data.item())
+            all_outputs = np.concatenate(all_outputs, axis=0)
+            all_losses = float(np.mean(all_losses))
 
-        # Validation metrics
-        validation_accuracies.append(metrics.accuracy_score(
-            dataset.Y_test, outputs.argmax(-1)))
-        validation_f1_scores.append(metrics.f1_score(
-            dataset.Y_test, outputs.argmax(-1), average="weighted"))
-        validation_losses.append(loss.data.item())
+            # Validation metrics
+            validation_accuracies.append(metrics.accuracy_score(
+                dataset.Y_test, all_outputs))
+            validation_f1_scores.append(metrics.f1_score(
+                dataset.Y_test, all_outputs, average="weighted"))
+            validation_losses.append(all_losses)
 
-        # Print
-        print("        Validation: accuracy={}, f1={}, loss={}".format(
-            validation_accuracies[-1], validation_f1_scores[-1], validation_losses[-1]))
+            # Print
+            print("        Validation: accuracy={}, f1={}, loss={}".format(
+                validation_accuracies[-1], validation_f1_scores[-1], validation_losses[-1]))
 
-        if epoch > 10:
-            break  # TODO: remove for full training.
+            # if epoch > 0:
+            #     break  # TODO: remove for full training.
 
     # Aggregate data for serialization
     history = {
@@ -184,7 +203,7 @@ def train(hyperparameters, dataset, evaluation_metric):
         # Note: 'loss' in Hyperopt means 'score', so we use something else it's not the real loss.
         'loss': -max_score,
         'true_loss': -max_score,
-        'true_loss_variance': np.var(history[full_metric_name][-10:]),  # Note that the "-10" is in epochs count.
+        'true_loss_variance': np.var(history[full_metric_name][-5:]),  # Note that the "-5" is in epochs count.
         'real_best_loss': min(validation_losses),  # This is the only "loss" literally-speaking. Others are hyperopt losses for `fmin` meta-optimization.
         # "Best" metrics throughout training:
         'best_train_accuracy': max(train_accuracies),
@@ -202,6 +221,21 @@ def train(hyperparameters, dataset, evaluation_metric):
     print_json(result)
     return model, model_name, result
 
+def adjust_lr(optim, base_lr, epoch, decay_each_N_epoch):
+    # if epoch == 0:
+    #     # Warmum phase!
+    #     new_lr = base_lr / 5
+    # else:
+    if True:
+        # Decay at each `decay_each_N_epoch`
+        new_lr = base_lr * (
+            0.75**(epoch // decay_each_N_epoch))
+
+    new_state_dict = optim.state_dict()
+    for params_group in new_state_dict['param_groups']:
+        params_group['lr'] = new_lr
+    optim.load_state_dict(new_state_dict)
+    return new_lr
 
 dataset_name_to_class = {
     'UCIHAR': UCIHARDataset,
@@ -210,13 +244,13 @@ dataset_name_to_evaluation_metric = {
     'UCIHAR': "accuracies",
     'Opportunity': "f1_scores"}
 
-def get_optimizer(dataset_name):
+def get_optimizer(dataset_name, device):
     _dataset = dataset_name_to_class[dataset_name]()
     _evaluation_metric = dataset_name_to_evaluation_metric[dataset_name]
 
     # Returns a callable for Hyperopt Optimization (for `fmin`):
     return lambda hyperparameters: (
-        optimize_model(hyperparameters, _dataset, _evaluation_metric)
+        optimize_model(hyperparameters, _dataset, _evaluation_metric, device)
     )
 
 
@@ -226,27 +260,27 @@ class Model(nn.Module):
         # This loguniform scale will multiply the learning rate, so as to make
         # it vary exponentially, in a multiplicative fashion rather than in
         # a linear fashion, to handle his exponentialy varying nature:
-        'learning_rate': 0.001 * hp.loguniform('learning_rate_mult', -0.5, 0.5),
+        'learning_rate': 0.006 * hp.loguniform('learning_rate_mult', -0.4, 0.4),
+        # How many epochs before the learning_rate is multiplied by 0.75
+        'decay_each_N_epoch': hp.quniform('decay_each_N_epoch', 6 - 0.499, 50 + 0.499, 1),
         # L2 weight decay:
-        'l2_weight_reg': 0.005 * hp.loguniform('l2_weight_reg_mult', -1.3, 1.3),
+        'l2_weight_reg': 0.002 * hp.loguniform('l2_weight_reg_mult', -1.3, 1.3),
         # Number of loops on the whole train dataset
-        'training_epochs': 80,
+        'training_epochs': 100,
         # Number of examples fed per training step
-        'batch_size': 64,
+        'batch_size': 256,
 
         ### LSTM/RNN parameters
         # The dropout on the hidden unit on top of each LARNN cells
-        'dropout_drop_proba': hp.uniform('dropout_drop_proba', 0.1, 0.5),
+        'dropout_drop_proba': hp.uniform('dropout_drop_proba', 0.05, 0.5),
         # Let's multiply the "default" number of hidden units:
-        'hidden_size': 42 * hp.loguniform('hidden_size_mult', -0.6, 0.6),
+        'hidden_size': 68 * hp.loguniform('hidden_size_mult', -0.3, 0.3),
         # The number 'h' of attention heads:
-        'attention_heads': 8,
-        # Use batch normalisation at more places?
-        'use_BN': True,
+        'attention_heads': hp.quniform('attention_heads', 20 - 0.499, 40 + 0.499, 1),
 
         ### LARNN (Linear Attention RNN) parameters
         # How restricted is the attention back in time steps (across sequence)
-        'larnn_window_size': hp.uniform('larnn_window_size', 1, 50),
+        'larnn_window_size': hp.uniform('larnn_window_size', 25, 100),
         # How the new attention is placed in the LSTM
         'larnn_mode': hp.choice('larnn_mode', [
             'residual',  # Attention will be added to Wx and Wh as `Wx*x + Wh*h + Wa*a + b`.
@@ -258,14 +292,16 @@ class Model(nn.Module):
         ]),
         # Wheter or not to use Positional Encoding similar to the one used in https://arxiv.org/abs/1706.03762
         'use_positional_encoding': hp.choice('use_positional_encoding', [False, True]),
+        # Wheter or not to use BN(ELU(.)) in the Linear() layers of the keys and values in the multi-head attention.
+        'activation_on_keys_and_values': True,
 
         # Number of layers, either stacked or residualy stacked:
-        'num_layers': hp.choice('num_layers', [2, 3]),
+        'num_layers': 3,
         # Use residual connections for the 2nd (stacked) layer?
-        'is_stacked_residual': hp.choice('is_stacked_residual', [False, True])
+        'is_stacked_residual': True
     }
 
-    def __init__(self, hyperparameters, input_size, output_size):
+    def __init__(self, hyperparameters, input_size, output_size, device):
         super().__init__()
         self.hyperparameters = hyperparameters
 
@@ -278,8 +314,10 @@ class Model(nn.Module):
             num_layers=self.hyperparameters['num_layers'],
             larnn_window_size=self.hyperparameters['larnn_window_size'],
             larnn_mode=self.hyperparameters['larnn_mode'],
-            use_positional_encoding=self.hyperparameters['use_positional_encoding'],
             is_stacked_residual=self.hyperparameters['is_stacked_residual'],
+            use_positional_encoding=self.hyperparameters['use_positional_encoding'],
+            activation_on_keys_and_values=self.hyperparameters['activation_on_keys_and_values'],
+            device=device,
             dropout=self.hyperparameters['dropout_drop_proba']
         )
         # self._larnn = nn.LSTM(
@@ -290,6 +328,7 @@ class Model(nn.Module):
         self._out = nn.Linear(hidden_size, output_size)
 
         self.init_parameters()
+        self.to(device)
 
     def init_parameters(self):
         for param in self.parameters():
@@ -297,7 +336,7 @@ class Model(nn.Module):
                 nn.init.xavier_uniform_(param)
 
     def forward(self, input, state=None):
-        hidden = self._in(input)  # Change number of features with a linear
+        hidden = F.elu(self._in(input))  # Change number of features with a linear
         hidden, state = self._larnn(hidden, state)  # Deep LARNNing a lot here
         output = hidden[-1]  # Keep only last item of time series sequence axis
         output = self._out(output)  # Reshape with a linear for categories
@@ -307,15 +346,24 @@ class Model(nn.Module):
 if __name__ == "__main__":
     """Take the best hyperparameters and re-train on them."""
 
-    dataset_name = 'UCIHAR'
-    space_best_model = load_best_hyperspace(dataset_name)
+    parser = argparse.ArgumentParser(
+        description='Hyperopt meta-optimizer for the LARNN Model on sensors datasets.')
+    parser.add_argument(
+        '--dataset', type=str, default='UCIHAR',
+        help='Which dataset to use ("UCIHAR" or "Opportunity")')
+    parser.add_argument(
+        '--device', type=str, default='cuda',
+        help='Should we use "cuda" or "cpu"?')
+    args = parser.parse_args()
 
-    if space_best_model is None:
+    # Load hyperparameters
+    best_model_hyperparameters = load_best_hyperparameters(args.dataset)
+    if best_model_hyperparameters is None:
         print("You haven't found good hyperparameters yet. Run `hyperopt_optimize.py` first.")
         sys.exit(1)
 
     # Train the model.
-    model, model_name, result = optimize_model(dataset_name)(space_best_model)
+    model, model_name, result = optimize_model(args.dataset, args.device)(best_model_hyperparameters)
 
     # Prints training results to disks with unique filenames
     print("Model Name:", model_name)
