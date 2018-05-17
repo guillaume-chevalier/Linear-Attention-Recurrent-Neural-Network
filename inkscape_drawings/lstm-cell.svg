@@ -16,7 +16,7 @@
    id="svg8"
    sodipodi:docname="lstm-cell.svg"
    inkscape:version="0.92.3 (2405546, 2018-03-11)"
-   inkscape:export-filename="/home/users_home/Documents/GIT/FINAL_DL/Linear-Attention-Recurrent-Neural-Network/drawings/lstm-cell.png"
+   inkscape:export-filename="/home/users_home/Documents/GIT/FINAL_DL/Linear-Attention-Recurrent-Neural-Network/inkscape_drawings/png_exported/lstm-cell.png"
    inkscape:export-xdpi="299.91537"
    inkscape:export-ydpi="299.91537">
   <title
@@ -207,8 +207,8 @@
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
      inkscape:zoom="1"
-     inkscape:cx="194.59306"
-     inkscape:cy="318.43093"
+     inkscape:cx="433.45381"
+     inkscape:cy="188.63838"
      inkscape:document-units="mm"
      inkscape:current-layer="layer1"
      showgrid="false"
@@ -651,7 +651,7 @@
     </g>
     <path
        style="fill:none;stroke:#4d4d4d;stroke-width:0.57924587;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-       d="M 48.407715,234.63556 H 116.17405"
+       d="M 36.170736,234.63556 H 116.17405"
        id="path5722"
        inkscape:connector-curvature="0"
        sodipodi:nodetypes="cc" />
@@ -1317,5 +1317,18 @@
        cx="126.46479"
        id="circle11643"
        style="fill:#e5ff5b;fill-opacity:1;stroke-width:0.30651757" />
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:12.26070404px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#4d4d4d;fill-opacity:1;stroke:none;stroke-width:0.30651757"
+       x="28.067818"
+       y="235.88847"
+       id="text1045"><tspan
+         sodipodi:role="line"
+         id="tspan1043"
+         x="28.067818"
+         y="235.88847"
+         style="font-size:5.31297159px;fill:#4d4d4d;stroke-width:0.30651757">h<tspan
+   id="tspan1041"
+   style="font-size:2.45214057px;stroke-width:0.30651757">t-1</tspan></tspan></text>
   </g>
 </svg>
