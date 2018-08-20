@@ -134,14 +134,21 @@ This command is practical if you want to edit the model and potentially print-de
 python3 larnn.py
 ```
 
-## Some thoughts
+## Some thoughts and self-assessment
 
-The LARNN cell obtains better results than the LSTM cell as [explored here](https://github.com/guillaume-chevalier/LSTM-Human-Activity-Recognition).
+Although the LARNN cell obtains better results than the LSTM cell as [explored here](https://github.com/guillaume-chevalier/LSTM-Human-Activity-Recognition), the LARNN is more complicated and hence the LSTM cell is still very interesting and probably of greater value.
 
-However, it's yet uncompared to a bidirectional deeply stacked setup such as [done here](https://github.com/guillaume-chevalier/HAR-stacked-residual-bidir-LSTMs), where better results are obtained.
+However, the LARNN would still have to be compared to a deeply stacked setup such as [done here](https://github.com/guillaume-chevalier/HAR-stacked-residual-bidir-LSTMs), where better results are obtained, but by using many more cells which means the current project could still perform better with more cells and proper regularization.
 
-It seems that the positional encoding is not helpful for the learning.
+It seems that the positional encoding tried here is not helpful for the learning.
 
+So overall, despite the LARNN not bringing huge improvements in accuracy, the most interesting thing about this project are: 
+- The code which is reusable and neat for being easily adaptable to automatically hyperoptimize on other datasets and networks. 
+- The discovery that adding an activation on the multi-head self-attention mechanism's keys, queries and values performed well in the context here, better than using no activation. 
+- To my best knowledge, a new neural attention data structure is created by using a queue for an attention mechanism, sliding through time, and this data structure could potentially be very interesting in many other applications where attention is required. 
+- The figures are reusable, published under CC-BY in the subfolder, while the code is published under the MIT License and also reusable. 
+
+The current dataset is solveable with good accuracy without any attention mechanism. So the current project was more to code something interesting to than genuinely try to improve the accuracy on a small dataset. I coded this in 1 week so I couldn't use a very complicated dataset and rebuild a complete data pipeline - I had to reuse old code of mine that I already knew.
 
 ## References
 
@@ -154,6 +161,10 @@ The current project contains code derived from those other projects:
 - https://github.com/harvardnlp/annotated-transformer
 
 More information on which pieces of code comes from where in the headers of each Python files. All of those references are licensed under permissive open-source licenses, such as the MIT License and the Apache 2.0 License.
+
+## Paper (Citing)
+
+For more information, see the paper's page on [arXiv](https://arxiv.org/abs/1808.05578).
 
 ## License
 
